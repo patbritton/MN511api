@@ -1,7 +1,7 @@
 import { fetch511Graphql } from "./fetch511.js";
 import { normalizeMapFeaturesResponse } from "./normalize.js";
 import { purgeAndMark } from "./purge.js";
-import { buildMapFeaturesVariables, MAP_FEATURES_QUERY } from "./mapFeatures.js";
+import { buildMapFeaturesRequest } from "./mapFeatures.js";
 
 function upsertEvent(db, ev, nowIso) {
   const existing = db.prepare(`SELECT id, first_seen_at FROM events WHERE id = ?`).get(ev.id);
@@ -61,7 +61,7 @@ export async function runIngestOnce(app) {
   // IMPORTANT:
   // You should pass bbox/zoom vars based on your desired region.
   // For statewide coverage you may need multiple bbox tiles.
-  const variables = buildMapFeaturesVariables({
+  const { query, variables } = buildMapFeaturesRequest({
     bbox: {
       // Example: Twin Cities-ish bbox; replace with yours
       north: 45.3,
@@ -73,7 +73,7 @@ export async function runIngestOnce(app) {
     layerSlugs: ["incidents", "closures", "cameras", "roadConditions", "weatherEvents"]
   });
 
-  const json = await fetch511Graphql({ query: MAP_FEATURES_QUERY, variables });
+  const json = await fetch511Graphql({ query, variables });
 
   const normalized = normalizeMapFeaturesResponse(json);
 

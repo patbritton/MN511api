@@ -1,6 +1,6 @@
 import { fetch511Graphql } from "../services/fetch511.js";
 import { normalizeMapFeaturesResponse } from "../services/normalize.js";
-import { buildMapFeaturesVariables, MAP_FEATURES_QUERY } from "../services/mapFeatures.js";
+import { buildMapFeaturesRequest } from "../services/mapFeatures.js";
 
 function toNumberOrNull(v) {
   if (v === undefined || v === null || v === "") return null;
@@ -157,13 +157,13 @@ async function listLive(app, req, reply, layerKey) {
   }
 
   const zoom = parseZoomParam(req.query.zoom) ?? 0;
-  const variables = buildMapFeaturesVariables({
+  const { query, variables } = buildMapFeaturesRequest({
     bbox,
     zoom,
     layerSlugs: LAYERS[layerKey]
   });
 
-  const json = await fetch511Graphql({ query: MAP_FEATURES_QUERY, variables });
+  const json = await fetch511Graphql({ query, variables });
   const normalized = normalizeMapFeaturesResponse(json);
   const features = normalized.map((ev) => toGeoJsonFeatureFromNormalized(ev));
 
