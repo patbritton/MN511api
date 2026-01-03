@@ -22,5 +22,28 @@ export const config = {
   hardExpireMinutes: Number(process.env.HARD_EXPIRE_MINUTES ?? 180),
 
   mn511GraphqlUrl: must("MN511_GRAPHQL_URL"),
-  mn511UserAgent: process.env.MN511_USER_AGENT ?? "mn511-api/1.0"
+  mn511UserAgent: process.env.MN511_USER_AGENT ?? "mn511-api/1.0",
+
+  layerMap: {
+    incidents: parseLayers(process.env.LAYERS_INCIDENTS, ["incidents"]),
+    closures: parseLayers(process.env.LAYERS_CLOSURES, ["closures"]),
+    cameras: parseLayers(process.env.LAYERS_CAMERAS, ["cameras"]),
+    plows: parseLayers(process.env.LAYERS_PLOWS, ["plowCameras"]),
+    "road-conditions": parseLayers(process.env.LAYERS_ROAD_CONDITIONS, ["roadConditions"]),
+    "weather-events": parseLayers(process.env.LAYERS_WEATHER_EVENTS, ["weatherEvents"]),
+    alerts: parseLayers(process.env.LAYERS_ALERTS, ["incidents", "closures", "weatherEvents"]),
+    "rest-areas": parseLayers(process.env.LAYERS_REST_AREAS, ["restAreas"]),
+    "weigh-stations": parseLayers(process.env.LAYERS_WEIGH_STATIONS, ["weighStations"]),
+    "fueling-stations": parseLayers(process.env.LAYERS_FUELING_STATIONS, ["fuelingStations"]),
+    rwss: parseLayers(process.env.LAYERS_RWSS, ["rwis"])
+  }
 };
+
+function parseLayers(value, fallback) {
+  if (!value) return fallback;
+  const parts = value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length ? parts : fallback;
+}

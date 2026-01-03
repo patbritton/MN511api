@@ -1,3 +1,4 @@
+import { config } from "../config.js";
 import { fetch511Graphql } from "../services/fetch511.js";
 import { normalizeMapFeaturesResponse } from "../services/normalize.js";
 import { buildMapFeaturesRequest } from "../services/mapFeatures.js";
@@ -135,20 +136,6 @@ function listEvents(app, req, opts) {
   };
 }
 
-const LAYERS = {
-  incidents: ["incidents"],
-  closures: ["closures"],
-  cameras: ["cameras"],
-  plows: ["plowCameras"],
-  "road-conditions": ["roadConditions"],
-  "weather-events": ["weatherEvents"],
-  alerts: ["incidents", "closures", "weatherEvents"],
-  "rest-areas": ["restAreas"],
-  "weigh-stations": ["weighStations"],
-  "fueling-stations": ["fuelingStations"],
-  rwss: ["rwis"]
-};
-
 async function listLive(app, req, reply, layerKey) {
   const bbox = parseBboxParam(req.query.bbox);
   if (!bbox) {
@@ -157,10 +144,15 @@ async function listLive(app, req, reply, layerKey) {
   }
 
   const zoom = parseZoomParam(req.query.zoom) ?? 0;
+  const layerSlugs = config.layerMap[layerKey];
+  if (!layerSlugs || layerSlugs.length === 0) {
+    reply.code(500);
+    return { ok: false, error: "LAYER_MAP_MISSING" };
+  }
   const { query, variables } = buildMapFeaturesRequest({
     bbox,
     zoom,
-    layerSlugs: LAYERS[layerKey]
+    layerSlugs
   });
 
   const json = await fetch511Graphql({ query, variables });

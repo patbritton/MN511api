@@ -42,6 +42,7 @@ npm run dev
 - Queries are static and replayable; keep them in the API layer
 - Camera image URLs returned by the API are read-only and ephemeral; link/proxy, do not scrape
 - `/api/*` endpoints query MN511 directly using `layerSlugs` and require `bbox`; optional `zoom`
+- You can override `layerSlugs` per endpoint using `LAYERS_*` env vars (see `.env.example`)
 
 ## One-time HAR extraction
 ```bash
