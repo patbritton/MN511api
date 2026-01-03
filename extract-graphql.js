@@ -1,4 +1,4 @@
-const fs = require("fs");
+import fs from "node:fs";
 
 const har = JSON.parse(fs.readFileSync("511mn.org.har", "utf8"));
 const queries = new Map();

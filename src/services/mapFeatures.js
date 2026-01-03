@@ -1,23 +1,27 @@
 export const MAP_FEATURES_QUERY = `
-query MapFeatures($input: MapFeaturesArgs!) {
+query MapFeatures($input: MapFeaturesArgs!, $plowType: String) {
   mapFeaturesQuery(input: $input) {
     mapFeatures {
+      bbox
       title
       tooltip
       uri
-      priority
-      bbox
       features {
         id
+        geometry
+        properties
         type
-        geometry { type coordinates }
-        properties {
-          icon { url scaledSize { width height } }
-          strokeColor
-          fillColor
-          zIndex
-          priority
-        }
+      }
+      ... on Cluster { maxZoom }
+      ... on Sign { signDisplayType }
+      ... on Event { priority }
+      __typename
+      ... on Camera {
+        active
+        views(limit: 5) { uri ... on CameraView { url } category }
+      }
+      ... on Plow {
+        views(limit: 5, plowType: $plowType) { uri ... on PlowCameraView { url } category }
       }
     }
     error { message type }
@@ -25,46 +29,16 @@ query MapFeatures($input: MapFeaturesArgs!) {
 }
 `;
 
-export const MAP_FEATURES_QUERY_PLOW = `
-query MapFeatures($input: MapFeaturesArgs!, $plowType: String!) {
-  mapFeaturesQuery(input: $input, plowType: $plowType) {
-    mapFeatures {
-      title
-      tooltip
-      uri
-      priority
-      bbox
-      features {
-        id
-        type
-        geometry { type coordinates }
-        properties {
-          icon { url scaledSize { width height } }
-          strokeColor
-          fillColor
-          zIndex
-          priority
-        }
-      }
-    }
-    error { message type }
-  }
-}
-`;
-
-export function buildMapFeaturesRequest({ bbox, zoom, layerSlugs }) {
+export function buildMapFeaturesRequest({ bbox, zoom, layerSlugs, nonClusterableUris }) {
   const input = {
     north: bbox.north,
     south: bbox.south,
     east: bbox.east,
     west: bbox.west,
     zoom,
-    layerSlugs
+    layerSlugs,
+    nonClusterableUris: nonClusterableUris ?? ["dashboard"]
   };
 
-  if (layerSlugs.includes("plowCameras")) {
-    return { query: MAP_FEATURES_QUERY_PLOW, variables: { input, plowType: "plowCameras" } };
-  }
-
-  return { query: MAP_FEATURES_QUERY, variables: { input } };
+  return { query: MAP_FEATURES_QUERY, variables: { input, plowType: "plowCameras" } };
 }
