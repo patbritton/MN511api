@@ -136,7 +136,7 @@ function listEvents(app, req, opts) {
   };
 }
 
-async function listLive(app, req, reply, layerKey) {
+async function listLive(app, req, reply, layerKey, opts = {}) {
   const bbox = parseBboxParam(req.query.bbox);
   if (!bbox) {
     reply.code(400);
@@ -157,7 +157,10 @@ async function listLive(app, req, reply, layerKey) {
 
   const json = await fetch511Graphql({ query, variables });
   const normalized = normalizeMapFeaturesResponse(json);
-  const features = normalized.map((ev) => toGeoJsonFeatureFromNormalized(ev));
+  const filtered = Array.isArray(opts.categories)
+    ? normalized.filter((ev) => opts.categories.includes(ev.category))
+    : normalized;
+  const features = filtered.map((ev) => toGeoJsonFeatureFromNormalized(ev));
 
   return { ok: true, count: features.length, type: "FeatureCollection", features };
 }
@@ -309,10 +312,18 @@ export async function eventRoutes(app) {
     return { ok: true, feature };
   });
 
-  app.get("/api/incidents", async (req, reply) => listLive(app, req, reply, "incidents"));
-  app.get("/api/closures", async (req, reply) => listLive(app, req, reply, "closures"));
-  app.get("/api/cameras", async (req, reply) => listLive(app, req, reply, "cameras"));
-  app.get("/api/plows", async (req, reply) => listLive(app, req, reply, "plows"));
+  app.get("/api/incidents", async (req, reply) =>
+    listLive(app, req, reply, "incidents", { categories: ["CRASH", "INCIDENT"] })
+  );
+  app.get("/api/closures", async (req, reply) =>
+    listLive(app, req, reply, "closures", { categories: ["CLOSURE"] })
+  );
+  app.get("/api/cameras", async (req, reply) =>
+    listLive(app, req, reply, "cameras", { categories: ["CAMERA"] })
+  );
+  app.get("/api/plows", async (req, reply) =>
+    listLive(app, req, reply, "plows", { categories: ["PLOW"] })
+  );
   app.get("/api/road-conditions", async (req, reply) =>
     listLive(app, req, reply, "road-conditions")
   );
