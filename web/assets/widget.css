@@ -1,0 +1,51 @@
+:root {
+  --widget-bg: #101820;
+  --widget-accent: #ffb703;
+  --widget-text: #f4f4f4;
+  --widget-muted: #b6c2c9;
+}
+
+.mn511-widget {
+  border: 1px solid #22333c;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--widget-bg);
+  color: var(--widget-text);
+  font-family: "Franklin Gothic Medium", "Arial Narrow", Arial, sans-serif;
+}
+
+.mn511-widget-header {
+  padding: 10px 12px;
+  background: #1b2a32;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.mn511-widget-map {
+  height: 320px;
+}
+
+.mn511-widget-list {
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+.mn511-widget-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #22333c;
+}
+
+.mn511-widget-item:last-child {
+  border-bottom: none;
+}
+
+.mn511-widget-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.mn511-widget-meta {
+  font-size: 12px;
+  color: var(--widget-muted);
+}

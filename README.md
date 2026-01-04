@@ -49,3 +49,15 @@ npm run dev
 node extract-graphql.js
 ```
 Creates `extracted-graphql.json` from `511mn.org.har`.
+
+## Web map + widget
+The `web/` folder contains a Leaflet demo map and a JS widget.
+
+Run locally:
+```bash
+node web/serve.js
+```
+
+Demo pages:
+- `http://localhost:8788/` (full map)
+- `http://localhost:8788/widget-demo.html`
