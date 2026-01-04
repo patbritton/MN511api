@@ -29,6 +29,50 @@ const layerListEl = document.getElementById("layer-list");
 const legendEl = document.getElementById("legend");
 let lastListItems = [];
 
+function normalizeTimestamp(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "number") {
+    let ms = value;
+    if (ms < 2000000000) ms *= 1000;
+    return ms;
+  }
+  if (typeof value === "string") {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) return normalizeTimestamp(asNumber);
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function extractUpdatedMs(feature) {
+  const p = (feature && feature.properties) || {};
+  const raw = p.raw || {};
+  const candidates = [
+    p.last_updated_at,
+    p.updated_at,
+    p.lastUpdated,
+    p.updateTime,
+    raw.lastUpdated?.timestamp,
+    raw.lastUpdated?.time,
+    raw.updateTime?.time,
+    raw._eventReport?.lastUpdated?.timestamp,
+    raw._eventReport?.updateTime?.time
+  ];
+
+  for (const value of candidates) {
+    const ms = normalizeTimestamp(value);
+    if (ms !== null) return ms;
+  }
+  return null;
+}
+
+function formatTimestamp(ms) {
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+}
+
 function buildUrl(endpoint, bbox, zoom) {
   return `${API_BASE}/${endpoint}?bbox=${bbox}&zoom=${zoom}`;
 }
@@ -78,7 +122,11 @@ function renderList(items) {
     const p = f.properties || {};
     const severity = p.severity ?? p.priority ?? null;
     const title = p.title || "Alert";
-    const meta = [p.category, p.road, p.direction].filter(Boolean).join(" ");
+    const updatedMs = extractUpdatedMs(f);
+    const updatedText = formatTimestamp(updatedMs);
+    const meta = [p.category, p.road, p.direction, updatedText ? `Updated ${updatedText}` : ""]
+      .filter(Boolean)
+      .join(" ");
     const item = document.createElement("button");
     item.type = "button";
     item.className = "panel-item";
@@ -116,11 +164,14 @@ function addGeoJson(endpoint, geojson) {
       const title = p.title || "Alert";
       const meta = [p.category, p.road, p.direction].filter(Boolean).join(" ");
       const severity = p.severity ?? p.priority ?? null;
+      const updatedMs = extractUpdatedMs(feature);
+      const updatedText = formatTimestamp(updatedMs);
       const html = `
         <div class="popup">
           <div class="popup-title">${title}</div>
           <div class="popup-meta">${meta || "General"}</div>
           ${severity !== null ? `<div class="popup-sev">Severity ${severity}</div>` : ""}
+          ${updatedText ? `<div class="popup-time">Updated ${updatedText}</div>` : ""}
           ${p.tooltip ? `<div class="popup-tip">${p.tooltip}</div>` : ""}
         </div>
       `;

@@ -29,6 +29,50 @@
     return fetch(url).then((r) => (r.ok ? r.json() : { features: [] }));
   }
 
+  function normalizeTimestamp(value) {
+    if (value === undefined || value === null || value === "") return null;
+    if (typeof value === "number") {
+      let ms = value;
+      if (ms < 2000000000) ms *= 1000;
+      return ms;
+    }
+    if (typeof value === "string") {
+      const asNumber = Number(value);
+      if (Number.isFinite(asNumber)) return normalizeTimestamp(asNumber);
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  }
+
+  function extractUpdatedMs(feature) {
+    const p = (feature && feature.properties) || {};
+    const raw = p.raw || {};
+    const candidates = [
+      p.last_updated_at,
+      p.updated_at,
+      p.lastUpdated,
+      p.updateTime,
+      raw.lastUpdated?.timestamp,
+      raw.lastUpdated?.time,
+      raw.updateTime?.time,
+      raw._eventReport?.lastUpdated?.timestamp,
+      raw._eventReport?.updateTime?.time
+    ];
+
+    for (const value of candidates) {
+      const ms = normalizeTimestamp(value);
+      if (ms !== null) return ms;
+    }
+    return null;
+  }
+
+  function formatTimestamp(ms) {
+    if (!Number.isFinite(ms)) return null;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+  }
+
   function renderWidget(el) {
     const apiBase = el.dataset.apiBase || DEFAULTS.apiBase;
     const bbox = el.dataset.bbox || DEFAULTS.bbox;
@@ -54,13 +98,29 @@
 
     fetchGeo(apiBase, endpoint, bbox, zoom).then((geo) => {
       if (geo && geo.features) {
-        L.geoJSON(geo).addTo(map);
+        L.geoJSON(geo, {
+          onEachFeature: (feature, layer) => {
+            const p = feature.properties || {};
+            const titleText = p.title || "Alert";
+            const updatedMs = extractUpdatedMs(feature);
+            const updatedText = formatTimestamp(updatedMs);
+            const html = `
+              <div class="mn511-widget-popup">
+                <div class="mn511-widget-title">${titleText}</div>
+                ${updatedText ? `<div class="mn511-widget-meta">Updated ${updatedText}</div>` : ""}
+              </div>
+            `;
+            layer.bindPopup(html, { maxWidth: 260 });
+          }
+        }).addTo(map);
         listEl.innerHTML = geo.features
           .slice(0, 10)
           .map((f) => {
             const p = f.properties || {};
             const titleText = p.title || "Alert";
-            const meta = [p.category, p.severity ? `sev ${p.severity}` : ""]
+            const updatedMs = extractUpdatedMs(f);
+            const updatedText = formatTimestamp(updatedMs);
+            const meta = [p.category, p.severity ? `sev ${p.severity}` : "", updatedText]
               .filter(Boolean)
               .join(" ? ");
             return `

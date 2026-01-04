@@ -37,12 +37,12 @@ function mn511_build_url($endpoint) {
 }
 
 function mn511_extract_updated_ms($feature) {
-    if (empty($feature['properties']['raw'])) {
-        return null;
-    }
-    $raw = $feature['properties']['raw'];
+    $raw = $feature['properties']['raw'] ?? array();
 
     $candidates = array(
+        $feature['properties']['lastUpdated'] ?? null,
+        $feature['properties']['updateTime'] ?? null,
+        $feature['properties']['timestamp'] ?? null,
         $raw['lastUpdated']['timestamp'] ?? null,
         $raw['lastUpdated']['time'] ?? null,
         $raw['updateTime']['time'] ?? null,
@@ -59,32 +59,30 @@ function mn511_extract_updated_ms($feature) {
     return null;
 }
 
-function mn511_filter_past_hour($features) {
-    $now_ms = (int) (microtime(true) * 1000);
-    $cutoff_ms = $now_ms - (60 * 60 * 1000);
-    $out = array();
-
-    foreach ($features as $feature) {
-        $updated_ms = mn511_extract_updated_ms($feature);
-        if ($updated_ms === null) {
-            $out[] = $feature;
-            continue;
-        }
-
-        // Heuristic: convert seconds to ms if needed.
-        if ($updated_ms < 2000000000) {
-            $updated_ms *= 1000;
-        }
-
-        if ($updated_ms >= $cutoff_ms) {
-            $out[] = $feature;
-        }
+function mn511_format_timestamp($timestamp) {
+    if (!is_numeric($timestamp)) {
+        return null;
     }
+    $value = (int) $timestamp;
+    if ($value < 2000000000) {
+        $value *= 1000;
+    }
+    return wp_date('c', (int) ($value / 1000));
+}
 
-    return $out;
+function mn511_format_iso_string($value) {
+    if (empty($value)) {
+        return null;
+    }
+    $ts = strtotime($value);
+    if ($ts === false) {
+        return null;
+    }
+    return wp_date('c', $ts);
 }
 
 function mn511_fetch_and_cache() {
+    $previous = get_transient('mn511_cache');
     $cache = array(
         'fetched_at' => gmdate('c'),
         'endpoints' => array(),
@@ -94,22 +92,33 @@ function mn511_fetch_and_cache() {
         $url = mn511_build_url($endpoint);
         $resp = wp_remote_get($url, array('timeout' => 15));
         if (is_wp_error($resp)) {
+            if (!empty($previous['endpoints'][$endpoint])) {
+                $cache['endpoints'][$endpoint] = $previous['endpoints'][$endpoint];
+            }
             continue;
         }
         $code = wp_remote_retrieve_response_code($resp);
         if ($code < 200 || $code >= 300) {
+            if (!empty($previous['endpoints'][$endpoint])) {
+                $cache['endpoints'][$endpoint] = $previous['endpoints'][$endpoint];
+            }
             continue;
         }
 
         $body = wp_remote_retrieve_body($resp);
         $json = json_decode($body, true);
-        if (!is_array($json) || empty($json['features'])) {
-            $cache['endpoints'][$endpoint] = array();
+        if (!is_array($json) || !isset($json['features']) || !is_array($json['features'])) {
+            $cache['endpoints'][$endpoint] = array(
+                'fetched_at' => gmdate('c'),
+                'items' => array(),
+            );
             continue;
         }
 
-        $features = mn511_filter_past_hour($json['features']);
-        $cache['endpoints'][$endpoint] = $features;
+        $cache['endpoints'][$endpoint] = array(
+            'fetched_at' => gmdate('c'),
+            'items' => $json['features'],
+        );
     }
 
     set_transient('mn511_cache', $cache, MN511_CACHE_TTL);
@@ -151,13 +160,24 @@ function mn511_shortcode($atts) {
         return '<div>No data available.</div>';
     }
 
-    $items = $cache['endpoints'][$atts['endpoint']];
-    $out = '<ul class="mn511-list">';
+    $endpoint_data = $cache['endpoints'][$atts['endpoint']];
+    $items = $endpoint_data['items'] ?? $endpoint_data;
+    if (empty($items) || !is_array($items)) {
+        return '<div>No data available.</div>';
+    }
+
+    $endpoint_fetched = $endpoint_data['fetched_at'] ?? $cache['fetched_at'] ?? null;
+    $endpoint_fetched = mn511_format_iso_string($endpoint_fetched) ?? $endpoint_fetched;
+    $out = '<div class="mn511-fetched">Fetched: ' . esc_html($endpoint_fetched ?? 'unknown') . '</div>';
+    $out .= '<ul class="mn511-list">';
     foreach ($items as $feature) {
         $p = $feature['properties'] ?? array();
         $title = esc_html($p['title'] ?? 'Alert');
         $tooltip = isset($p['tooltip']) ? wp_kses_post($p['tooltip']) : '';
-        $out .= '<li><strong>' . $title . '</strong><div>' . $tooltip . '</div></li>';
+        $updated_raw = mn511_extract_updated_ms($feature);
+        $updated_display = mn511_format_timestamp($updated_raw);
+        $timestamp_html = $updated_display ? '<div class="mn511-timestamp">Updated: ' . esc_html($updated_display) . '</div>' : '';
+        $out .= '<li><strong>' . $title . '</strong><div>' . $tooltip . '</div>' . $timestamp_html . '</li>';
     }
     $out .= '</ul>';
     return $out;
