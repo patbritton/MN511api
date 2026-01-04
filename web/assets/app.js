@@ -17,15 +17,17 @@ const LAYERS = [
 ];
 
 const map = L.map("map").setView([44.9778, -93.265], DEFAULT_ZOOM);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
   maxZoom: 19,
-  attribution: "&copy; OpenStreetMap"
+  subdomains: "abcd",
+  attribution: "&copy; OpenStreetMap &copy; CARTO"
 }).addTo(map);
 
 const layerGroups = {};
 const listEl = document.getElementById("list");
 const layerListEl = document.getElementById("layer-list");
 const legendEl = document.getElementById("legend");
+let lastListItems = [];
 
 function buildUrl(endpoint, bbox, zoom) {
   return `${API_BASE}/${endpoint}?bbox=${bbox}&zoom=${zoom}`;
@@ -64,20 +66,27 @@ function buildLegend() {
 
 function renderList(items) {
   listEl.innerHTML = "";
-  items
+  lastListItems = items
     .sort((a, b) => {
       const ap = a.properties || {};
       const bp = b.properties || {};
       return (bp.severity || bp.priority || 0) - (ap.severity || ap.priority || 0);
     })
-    .slice(0, 25)
-    .forEach((f) => {
+    .slice(0, 40);
+
+  lastListItems.forEach((f, idx) => {
     const p = f.properties || {};
-    const item = document.createElement("div");
+    const severity = p.severity ?? p.priority ?? null;
+    const title = p.title || "Alert";
+    const meta = [p.category, p.road, p.direction].filter(Boolean).join(" ");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "panel-item";
+    item.dataset.idx = String(idx);
     item.innerHTML = `
-      <div class="panel-item-title">${p.title || "Alert"}</div>
-      <div class="panel-item-meta">${p.category || ""} ${p.severity ? `? sev ${p.severity}` : ""}</div>
+      <div class="panel-item-title">${title}</div>
+      <div class="panel-item-meta">${meta || "General"}</div>
+      ${severity !== null ? `<span class="panel-badge">Sev ${severity}</span>` : ""}
     `;
     listEl.appendChild(item);
   });
@@ -101,7 +110,22 @@ function addGeoJson(endpoint, geojson) {
         fillColor: color,
         fillOpacity: 0.7
       }),
-    style: () => ({ color, weight: 3 })
+    style: () => ({ color, weight: 3 }),
+    onEachFeature: (feature, layer) => {
+      const p = feature.properties || {};
+      const title = p.title || "Alert";
+      const meta = [p.category, p.road, p.direction].filter(Boolean).join(" ");
+      const severity = p.severity ?? p.priority ?? null;
+      const html = `
+        <div class="popup">
+          <div class="popup-title">${title}</div>
+          <div class="popup-meta">${meta || "General"}</div>
+          ${severity !== null ? `<div class="popup-sev">Severity ${severity}</div>` : ""}
+          ${p.tooltip ? `<div class="popup-tip">${p.tooltip}</div>` : ""}
+        </div>
+      `;
+      layer.bindPopup(html, { maxWidth: 320 });
+    }
   });
 
   if (layerGroups[endpoint]) {
@@ -133,6 +157,30 @@ async function refresh() {
   renderList(allItems);
 }
 
+function focusFeature(feature) {
+  if (!feature) return;
+  const geometry = feature.geometry || {};
+  if (Array.isArray(feature.bbox) && feature.bbox.length === 4) {
+    const [minLon, minLat, maxLon, maxLat] = feature.bbox;
+    if ([minLon, minLat, maxLon, maxLat].every(Number.isFinite)) {
+      map.fitBounds(
+        [
+          [minLat, minLon],
+          [maxLat, maxLon]
+        ],
+        { padding: [40, 40] }
+      );
+      return;
+    }
+  }
+  if (geometry.type === "Point" && Array.isArray(geometry.coordinates)) {
+    const [lon, lat] = geometry.coordinates;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 12), { animate: true });
+    }
+  }
+}
+
 function bindTabs() {
   const buttons = Array.from(document.querySelectorAll(".tab-btn"));
   buttons.forEach((btn) => {
@@ -152,6 +200,14 @@ function bindLayerToggles() {
     el.addEventListener("change", refresh);
   });
 }
+
+listEl.addEventListener("click", (event) => {
+  const target = event.target.closest(".panel-item");
+  if (!target) return;
+  const idx = Number(target.dataset.idx);
+  const feature = lastListItems[idx];
+  focusFeature(feature);
+});
 
 let refreshTimer = null;
 map.on("moveend", () => {

@@ -44,7 +44,7 @@ body {
   top: 16px;
   left: 16px;
   padding: 10px 14px;
-  background: rgba(18, 29, 36, 0.9);
+  background: rgba(18, 29, 36, 0.75);
   border: 1px solid #22333c;
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
@@ -58,7 +58,7 @@ body {
   right: 16px;
   width: min(360px, 92vw);
   max-height: calc(100vh - 32px);
-  background: rgba(22, 34, 42, 0.96);
+  background: rgba(22, 34, 42, 0.82);
   border: 1px solid #22333c;
   border-radius: 14px;
   padding: 10px;
@@ -114,7 +114,7 @@ body {
   border: 1px solid #23323b;
   padding: 8px;
   border-radius: 10px;
-  background: #121d24;
+  background: rgba(18, 29, 36, 0.7);
 }
 
 .layer-label {
@@ -177,8 +177,18 @@ body {
 }
 
 .panel-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #23323b;
+  background: rgba(18, 29, 36, 0.7);
   border-bottom: 1px solid #22333c;
   padding: 10px 0;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 .panel-item:last-child {
@@ -193,6 +203,46 @@ body {
 .panel-item-meta {
   font-size: 12px;
   color: var(--muted);
+}
+
+.panel-item:hover {
+  transform: translateY(-1px);
+  border-color: #3b4a54;
+}
+
+.panel-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 183, 3, 0.18);
+  color: var(--accent);
+  border: 1px solid rgba(255, 183, 3, 0.4);
+}
+
+.popup-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.popup-meta {
+  color: #31424c;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.popup-sev {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c1121f;
+  margin-bottom: 6px;
+}
+
+.popup-tip {
+  font-size: 12px;
+  color: #2d3a43;
 }
 
 @media (max-width: 900px) {
