@@ -13,16 +13,7 @@ body {
   font-family: "Franklin Gothic Medium", "Arial Narrow", Arial, sans-serif;
   background: radial-gradient(circle at 20% 20%, #22343c, #0f1a1f 60%);
   color: var(--text);
-}
-
-.app-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid #22333c;
-  background: linear-gradient(90deg, #1b2a32, #152128);
+  height: 100vh;
 }
 
 .app-title {
@@ -36,27 +27,45 @@ body {
   letter-spacing: 0.5px;
 }
 
-main {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 16px;
-  padding: 16px;
+.map-shell {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
 }
 
 #map {
-  height: calc(100vh - 90px);
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid #22333c;
+  height: 100%;
+  width: 100%;
 }
 
-.sidebar {
-  background: var(--panel);
+.map-badge {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 10px 14px;
+  background: rgba(18, 29, 36, 0.9);
   border: 1px solid #22333c;
   border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  z-index: 500;
+}
+
+.map-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: min(360px, 92vw);
+  max-height: calc(100vh - 32px);
+  background: rgba(22, 34, 42, 0.96);
+  border: 1px solid #22333c;
+  border-radius: 14px;
   padding: 10px;
-  height: calc(100vh - 90px);
-  overflow: auto;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  z-index: 500;
 }
 
 .sidebar-tabs {
@@ -93,6 +102,9 @@ main {
 .layer-list {
   display: grid;
   gap: 8px;
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .layer-item {
@@ -127,6 +139,9 @@ main {
 .legend {
   display: grid;
   gap: 8px;
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .legend-item {
@@ -155,6 +170,12 @@ main {
   margin-bottom: 8px;
 }
 
+.panel-list {
+  max-height: calc(100vh - 250px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .panel-item {
   border-bottom: 1px solid #22333c;
   padding: 10px 0;
@@ -175,12 +196,17 @@ main {
 }
 
 @media (max-width: 900px) {
-  main {
-    grid-template-columns: 1fr;
+  .map-panel {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    top: auto;
+    width: auto;
+    max-height: 45vh;
   }
 
-  #map,
-  .sidebar {
-    height: 55vh;
+  .map-badge {
+    right: 16px;
+    left: 16px;
   }
 }
