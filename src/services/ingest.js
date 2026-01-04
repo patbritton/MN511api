@@ -2,6 +2,7 @@ import { fetch511Graphql } from "./fetch511.js";
 import { normalizeMapFeaturesResponse } from "./normalize.js";
 import { purgeAndMark } from "./purge.js";
 import { buildMapFeaturesRequest } from "./mapFeatures.js";
+import { ingestWeatherStations, ingestSigns, ingestCameraViews } from "./ingestNew.js";
 
 function upsertEvent(db, ev, nowIso) {
   const existing = db.prepare(`SELECT id, first_seen_at FROM events WHERE id = ?`).get(ev.id);
@@ -84,6 +85,33 @@ export async function runIngestOnce(app) {
 
   tx();
 
-  app.log.info({ count: normalized.length }, "Ingest complete");
+  app.log.info({ count: normalized.length }, "Events ingest complete");
+
+  // Ingest new data types
+  const bbox = {
+    north: 45.3,
+    south: 44.6,
+    east: -92.7,
+    west: -93.8
+  };
+
+  try {
+    await ingestWeatherStations(app, bbox);
+  } catch (e) {
+    app.log.error({ err: e }, "Weather stations ingest failed");
+  }
+
+  try {
+    await ingestSigns(app, bbox);
+  } catch (e) {
+    app.log.error({ err: e }, "Signs ingest failed");
+  }
+
+  try {
+    await ingestCameraViews(app, bbox);
+  } catch (e) {
+    app.log.error({ err: e }, "Camera views ingest failed");
+  }
+
   return { ok: true, ingested: normalized.length };
 }

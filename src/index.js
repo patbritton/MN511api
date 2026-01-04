@@ -9,6 +9,8 @@ import { openDb } from "./db.js";
 
 import { healthRoutes } from "./routes/health.js";
 import { eventRoutes } from "./routes/events.js";
+import { weatherStationRoutes } from "./routes/weatherStations.js";
+import { signRoutes } from "./routes/signs.js";
 import { runIngestOnce } from "./services/ingest.js";
 
 const app = Fastify({
@@ -33,6 +35,8 @@ await app.register(rateLimit, {
 
 await healthRoutes(app);
 await eventRoutes(app);
+await weatherStationRoutes(app);
+await signRoutes(app);
 
 // Run once on startup (optional)
 try {
@@ -58,12 +62,16 @@ app.get("/", async () => {
       "/health",
       "/v1/meta/status",
       "/v1/events",
+      "/v1/weather-stations",
+      "/v1/signs",
       "/api/incidents",
       "/api/closures",
       "/api/cameras",
       "/api/plows",
       "/api/road-conditions",
       "/api/weather-events",
+      "/api/weather-stations",
+      "/api/signs",
       "/api/alerts",
       "/api/rest-areas",
       "/api/weigh-stations",

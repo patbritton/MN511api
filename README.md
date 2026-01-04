@@ -1,40 +1,100 @@
-# mn511-api
+# MN511 API
+
+A comprehensive REST API for Minnesota 511 traffic, weather, and road condition data. Fetches data from the official MN511 GraphQL API, caches it in SQLite, and exposes clean RESTful endpoints with GeoJSON responses.
+
+## Features
+
+- 🚗 Traffic incidents, crashes, and closures
+- 📹 Traffic cameras with video sources
+- 🌡️ Road Weather Information Stations (RWIS) with detailed weather data
+- 🚦 Digital Message Signs (DMS) with current messages
+- ❄️ Snow plow locations
+- 🛣️ Road conditions and weather events
+- 🗺️ GeoJSON format for easy mapping
+- ⚡ Fast SQLite caching with automatic updates
+- 🔄 Scheduled data ingestion every 5 minutes
+- 🌐 CORS support for web applications
 
 ## Setup
+
 ```bash
 npm install
 cp .env.example .env
-# edit .env (set CORS_ORIGIN and your desired bbox/zoom in src/services/ingest.js)
+# Edit .env - set MN511_GRAPHQL_URL and CORS_ORIGIN
 npm run dev
 ```
 
 ## Endpoints
-- GET /health
-- GET /v1/meta/status
-- GET /v1/events (GeoJSON FeatureCollection)
-- GET /v1/events?bbox=minLon,minLat,maxLon,maxLat
-- GET /v1/events?category=CRASH
-- GET /v1/events?severity=2
-- GET /v1/events?min_severity=2
-- GET /v1/events?max_severity=4
-- GET /v1/events/:id (GeoJSON Feature)
-- GET /v1/cameras (GeoJSON FeatureCollection)
-- GET /api/incidents?bbox=minLon,minLat,maxLon,maxLat (GeoJSON FeatureCollection)
-- GET /api/closures?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/cameras?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/plows?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/road-conditions?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/weather-events?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/alerts?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/rest-areas?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/weigh-stations?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/fueling-stations?bbox=minLon,minLat,maxLon,maxLat
-- GET /api/rwss?bbox=minLon,minLat,maxLon,maxLat
-- GET /traffic (GeoJSON FeatureCollection)
-- GET /incidents (GeoJSON FeatureCollection)
-- GET /cameras (GeoJSON FeatureCollection)
-- GET /closures (GeoJSON FeatureCollection)
-- GET /conditions (GeoJSON FeatureCollection)
+
+### Health & Status
+- `GET /health` - Health check endpoint
+- `GET /v1/meta/status` - API status and metadata
+
+### Events (Cached in SQLite)
+- `GET /v1/events` - All events (GeoJSON FeatureCollection)
+- `GET /v1/events?bbox=minLon,minLat,maxLon,maxLat` - Events within bounding box
+- `GET /v1/events?category=CRASH` - Filter by category (CRASH, INCIDENT, CLOSURE, etc.)
+- `GET /v1/events?severity=2` - Filter by severity level
+- `GET /v1/events?min_severity=2` - Minimum severity filter
+- `GET /v1/events?max_severity=4` - Maximum severity filter
+- `GET /v1/events/:id` - Single event by ID (GeoJSON Feature)
+- `GET /v1/cameras` - Camera events
+
+### Weather Stations (RWIS) 🌡️
+Road Weather Information Stations with detailed weather data:
+
+- `GET /v1/weather-stations` - All weather stations (GeoJSON FeatureCollection)
+- `GET /v1/weather-stations?status=FREEZING` - Filter by status
+- `GET /v1/weather-stations?route=I-94` - Filter by route
+- `GET /v1/weather-stations/:id` - Single station by ID
+- `GET /api/weather-stations?bbox=...` - Live data from MN511 GraphQL
+
+**Weather data includes:**
+- Air temperature, dew point, surface temperature
+- Precipitation (rate, past 1/3/6/12/24 hours)
+- Wind speed/direction (average and gusts)
+- Visibility, relative humidity
+- Surface conditions (dry/wet/icy/snow)
+
+### Digital Message Signs 🚦
+Highway message signs with current displayed content:
+
+- `GET /v1/signs` - All signs (GeoJSON FeatureCollection)
+- `GET /v1/signs?status=ACTIVE` - Filter by status
+- `GET /v1/signs?route=I-35W` - Filter by route
+- `GET /v1/signs?bbox=minLon,minLat,maxLon,maxLat` - Signs within bounding box
+- `GET /v1/signs/:id` - Single sign by ID
+- `GET /api/signs?bbox=...` - Live data from MN511 GraphQL
+
+**Sign data includes:**
+- Current message text lines
+- Travel time displays
+- Images/graphics shown on signs
+- Gantry sign collections (overhead signs)
+
+### Live Data (Direct from MN511 GraphQL)
+These endpoints query MN511 in real-time and require `bbox` parameter:
+
+- `GET /api/incidents?bbox=minLon,minLat,maxLon,maxLat` - Live incidents
+- `GET /api/closures?bbox=...` - Live closures
+- `GET /api/cameras?bbox=...` - Live camera feeds
+- `GET /api/plows?bbox=...` - Live plow locations
+- `GET /api/road-conditions?bbox=...` - Live road conditions
+- `GET /api/weather-events?bbox=...` - Live weather events
+- `GET /api/alerts?bbox=...` - Live alerts
+- `GET /api/rest-areas?bbox=...` - Rest area information
+- `GET /api/weigh-stations?bbox=...` - Weigh station information
+- `GET /api/fueling-stations?bbox=...` - Fueling station information
+- `GET /api/rwss?bbox=...` - RWIS data (legacy endpoint)
+
+### Convenience Endpoints
+Filtered views of active events:
+
+- `GET /traffic` - Active traffic events (crashes, incidents, construction, closures)
+- `GET /incidents` - Active crashes and incidents only
+- `GET /cameras` - Active cameras
+- `GET /closures` - Active closures
+- `GET /conditions` - Active conditions (weather, plows)
 
 ## Notes
 - GraphQL endpoint: `https://511mn.org/api/graphql`
@@ -50,7 +110,19 @@ node extract-graphql.js
 ```
 Creates `extracted-graphql.json` from `511mn.org.har`.
 
-## Web map + widget
+## WordPress Plugin
+
+A WordPress plugin is included in the `wp/mn511-importer/` directory that:
+
+- Fetches and caches API data every 30 minutes
+- Creates custom post types for Alerts, Weather Stations, and Signs
+- Provides shortcodes: `[mn511]`, `[mn511_weather]`, `[mn511_signs]`
+- Includes basic styling
+
+See [wp/mn511-importer/README.md](wp/mn511-importer/README.md) for installation and usage.
+
+## Web Map + Widget
+
 The `web/` folder contains a Leaflet demo map and a JS widget.
 
 Run locally:
@@ -61,3 +133,55 @@ node web/serve.js
 Demo pages:
 - `http://localhost:8788/` (full map)
 - `http://localhost:8788/widget-demo.html`
+
+## Data Sources
+
+This API aggregates data from multiple MN511 GraphQL queries:
+
+1. **mapFeaturesQuery** - Events, incidents, cameras, road conditions
+2. **listWeatherStationsQuery** - RWIS data with detailed weather metrics
+3. **listSignsQuery** - Digital message signs with current content
+4. **listCameraViewsQuery** - Camera feeds with video sources
+
+## Example Response
+
+Weather Station GeoJSON:
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "weather-station/93",
+      "geometry": null,
+      "properties": {
+        "title": "I-535: Blatnik Bridge - Pier 20",
+        "status": "FREEZING",
+        "routeDesignator": "I-535",
+        "weatherFields": {
+          "TEMP_AIR_TEMPERATURE": {
+            "fieldName": "Air Temp",
+            "displayValue": "13° F",
+            "inAlertState": false
+          },
+          "WIND_AVG_SPEED": {
+            "fieldName": "Wind Speed (avg)",
+            "displayValue": "7.6 mph"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+## Development
+
+```bash
+npm run dev  # Start development server
+npm start    # Production server
+```
+
+## License
+
+MIT

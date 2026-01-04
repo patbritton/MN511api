@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(dir /s /b wp*.php)",
+      "Bash(curl:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

@@ -15,6 +15,21 @@ define('MN511_API_BASE', 'https://511.mp.ls/api');
 define('MN511_BBOX', '-93.35,44.90,-93.15,45.02'); // minLon,minLat,maxLon,maxLat
 define('MN511_ZOOM', '12');
 define('MN511_CACHE_TTL', 30 * 60);
+define('MN511_ALERT_POST_TYPE', 'mn511_alert');
+define('MN511_ALERT_UID_META', '_mn511_uid');
+define('MN511_ALERT_UPDATED_META', '_mn511_updated_at');
+define('MN511_ALERT_FETCHED_META', '_mn511_fetched_at');
+define('MN511_ALERT_RAW_META', '_mn511_raw');
+
+function mn511_register_post_type() {
+    register_post_type(MN511_ALERT_POST_TYPE, array(
+        'label' => 'MN511 Alerts',
+        'public' => false,
+        'show_ui' => true,
+        'supports' => array('title', 'editor', 'custom-fields'),
+    ));
+}
+add_action('init', 'mn511_register_post_type');
 
 function mn511_get_endpoints() {
     return array(
@@ -119,6 +134,10 @@ function mn511_fetch_and_cache() {
             'fetched_at' => gmdate('c'),
             'items' => $json['features'],
         );
+
+        if ($endpoint === 'alerts') {
+            mn511_sync_alert_posts($json['features'], $cache['endpoints'][$endpoint]['fetched_at']);
+        }
     }
 
     set_transient('mn511_cache', $cache, MN511_CACHE_TTL);
@@ -151,6 +170,99 @@ register_deactivation_hook(__FILE__, function () {
     wp_clear_scheduled_hook('mn511_fetch_event');
     delete_transient('mn511_cache');
 });
+
+function mn511_extract_feature_uid($feature) {
+    if (!is_array($feature)) {
+        return null;
+    }
+    $properties = $feature['properties'] ?? array();
+    $raw = $properties['raw'] ?? array();
+    $candidates = array(
+        $feature['id'] ?? null,
+        $properties['id'] ?? null,
+        $properties['uri'] ?? null,
+        $raw['id'] ?? null,
+        $raw['uri'] ?? null,
+    );
+
+    foreach ($candidates as $value) {
+        if (!empty($value)) {
+            return (string) $value;
+        }
+    }
+
+    return null;
+}
+
+function mn511_sync_alert_posts($features, $fetched_at) {
+    if (!is_array($features)) {
+        return;
+    }
+
+    $current_ids = array();
+    foreach ($features as $feature) {
+        $uid = mn511_extract_feature_uid($feature);
+        if (!$uid) {
+            continue;
+        }
+        $current_ids[] = $uid;
+        $p = $feature['properties'] ?? array();
+        $title = sanitize_text_field($p['title'] ?? 'Alert');
+        $tooltip = isset($p['tooltip']) ? wp_kses_post($p['tooltip']) : '';
+        $updated_ms = mn511_extract_updated_ms($feature);
+        $updated_display = mn511_format_timestamp($updated_ms);
+
+        $existing = get_posts(array(
+            'post_type' => MN511_ALERT_POST_TYPE,
+            'post_status' => array('publish', 'draft', 'pending', 'private', 'trash'),
+            'meta_key' => MN511_ALERT_UID_META,
+            'meta_value' => $uid,
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'no_found_rows' => true,
+        ));
+
+        $post_data = array(
+            'post_title' => $title,
+            'post_content' => $tooltip,
+            'post_status' => 'publish',
+            'post_type' => MN511_ALERT_POST_TYPE,
+        );
+
+        if (!empty($existing)) {
+            $post_data['ID'] = $existing[0];
+            wp_update_post($post_data);
+            $post_id = $existing[0];
+        } else {
+            $post_id = wp_insert_post($post_data);
+        }
+
+        if ($post_id && !is_wp_error($post_id)) {
+            update_post_meta($post_id, MN511_ALERT_UID_META, $uid);
+            if ($updated_display) {
+                update_post_meta($post_id, MN511_ALERT_UPDATED_META, $updated_display);
+            }
+            update_post_meta($post_id, MN511_ALERT_FETCHED_META, $fetched_at);
+            update_post_meta($post_id, MN511_ALERT_RAW_META, wp_json_encode($feature));
+        }
+    }
+
+    $existing_posts = get_posts(array(
+        'post_type' => MN511_ALERT_POST_TYPE,
+        'post_status' => array('publish', 'draft', 'pending', 'private'),
+        'meta_key' => MN511_ALERT_UID_META,
+        'posts_per_page' => -1,
+        'fields' => 'ids',
+        'no_found_rows' => true,
+    ));
+
+    foreach ($existing_posts as $post_id) {
+        $uid = get_post_meta($post_id, MN511_ALERT_UID_META, true);
+        if ($uid && !in_array($uid, $current_ids, true)) {
+            wp_trash_post($post_id);
+        }
+    }
+}
 
 // Simple shortcode to render a list.
 function mn511_shortcode($atts) {
