@@ -17,12 +17,32 @@ A comprehensive REST API for Minnesota 511 traffic, weather, and road condition 
 
 ## Setup
 
-```bash
-npm install
-cp .env.example .env
-# Edit .env - set MN511_GRAPHQL_URL and CORS_ORIGIN
-npm run dev
-```
+1.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+2.  **Create a `.env` file** in the root of the project with the following content:
+    ```
+    MN511_GRAPHQL_URL=https://graphql.mn511.org/
+    CORS_ORIGIN=http://localhost:8788,http://127.0.0.1:8788
+    NODE_TLS_REJECT_UNAUTHORIZED=0
+    ```
+    *   `MN511_GRAPHQL_URL`: The official GraphQL endpoint for the MN511 API.
+    *   `CORS_ORIGIN`: The origin(s) to allow for Cross-Origin Resource Sharing. The default frontend server runs on port `8788`.
+    *   `NODE_TLS_REJECT_UNAUTHORIZED`: This is necessary to bypass the self-signed certificate error from the GraphQL endpoint in a development environment.
+
+3.  **Start the development server:**
+    ```bash
+    npm run dev
+    ```
+    The API will be available at `http://localhost:8787`.
+
+4.  **Start the frontend server** in a new terminal:
+    ```bash
+    node web/serve.js
+    ```
+    The web map will be available at `http://localhost:8788`.
 
 ## Endpoints
 

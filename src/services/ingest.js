@@ -109,7 +109,7 @@ export async function runIngestOnce(app) {
     const { query, variables } = buildMapFeaturesRequest({
       bbox: twinCitiesBbox,
       zoom: 11,
-      layerSlugs: ["incidents", "closures", "cameras", "roadConditions", "rwis"]
+      layerSlugs: ["incidents", "closures", "cameras", "roadConditions"]
     });
 
     const json = await fetch511Graphql({ query, variables });
