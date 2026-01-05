@@ -99,18 +99,17 @@ export async function runIngestOnce(app) {
   const nowIso = new Date().toISOString();
 
   try {
-    // IMPORTANT:
-    // You should pass bbox/zoom vars based on your desired region.
-    // For statewide coverage you may need multiple bbox tiles.
+    const twinCitiesBbox = {
+      north: 45.4,
+      south: 44.4,
+      east: -92.5,
+      west: -94.0
+    };
+
     const { query, variables } = buildMapFeaturesRequest({
-      bbox: {
-        north: 49.68212,
-        south: 42.52101,
-        east: -87.706,
-        west: -95.14374
-      },
-      zoom: 10,
-      layerSlugs: ["incidents", "closures", "cameras", "roadConditions", "weatherEvents", "rwis"]
+      bbox: twinCitiesBbox,
+      zoom: 11,
+      layerSlugs: ["incidents", "closures", "cameras", "roadConditions", "rwis"]
     });
 
     const json = await fetch511Graphql({ query, variables });
@@ -126,13 +125,8 @@ export async function runIngestOnce(app) {
 
     app.log.info({ count: normalized.length }, "Events ingest complete");
 
-  // Ingest new data types
-  const bbox = {
-    north: 49.68212,
-    south: 42.52101,
-    east: -87.706,
-    west: -95.14374
-  };
+    // Ingest new data types
+    const bbox = twinCitiesBbox;
 
     try {
       await ingestWeatherStations(app, bbox);
