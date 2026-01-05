@@ -97,13 +97,13 @@ export async function runIngestOnce(app) {
 
     app.log.info({ count: normalized.length }, "Events ingest complete");
 
-    // Ingest new data types
-    const bbox = {
-      north: 45.3,
-      south: 44.6,
-      east: -92.7,
-      west: -93.8
-    };
+  // Ingest new data types
+  const bbox = {
+    north: 49.68212,
+    south: 42.52101,
+    east: -87.706,
+    west: -95.14374
+  };
 
     try {
       await ingestWeatherStations(app, bbox);

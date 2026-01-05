@@ -31,7 +31,7 @@ const LAYER_CATEGORIES = {
     title: "Weather & Conditions",
     icon: "🌡️",
     layers: [
-      { id: "weather-stations", label: "Weather Stations", icon: "🌡️", color: "#6f42c1", endpoint: "/v1/weather-stations", enabled: false },
+      { id: "weather-stations", label: "RWIS Stations", icon: "🌡️", color: "#6f42c1", endpoint: "/api/rwss", enabled: false },
       { id: "signs", label: "Message Signs", icon: "🚦", color: "#28a745", endpoint: "/v1/signs", enabled: false },
       { id: "plows", label: "Snow Plows", icon: "🚜", color: "#17a2b8", endpoint: "/api/plows", enabled: false },
       { id: "road-conditions", label: "Road Conditions", icon: "🛣️", color: "#6c757d", endpoint: "/api/road-conditions", enabled: false },
@@ -139,13 +139,17 @@ function formatRelativeTime(ms) {
 }
 
 function buildLayerUrl(endpoint, bbox) {
+  const bboxStr = [bbox.west, bbox.south, bbox.east, bbox.north].map(n => n.toFixed(5)).join(",");
   // For endpoints that need bbox parameter
   if (endpoint.includes("/api/")) {
-    const bboxStr = [bbox.west, bbox.south, bbox.east, bbox.north].map(n => n.toFixed(5)).join(",");
     const zoom = map.getZoom();
     return `${API_BASE}${endpoint}?bbox=${bboxStr}&zoom=${zoom}`;
   }
   // For /v1/ endpoints (cached data)
+  if (endpoint.includes("/v1/")) {
+    const sep = endpoint.includes("?") ? "&" : "?";
+    return `${API_BASE}${endpoint}${sep}bbox=${bboxStr}`;
+  }
   return `${API_BASE}${endpoint}`;
 }
 

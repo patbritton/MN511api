@@ -31,6 +31,18 @@ function buildWhere(query) {
     params.route = String(query.route);
   }
 
+  if (query.bbox) {
+    const parts = String(query.bbox).split(",").map((x) => Number(x.trim()));
+    if (parts.length === 4 && parts.every(Number.isFinite)) {
+      const [minLon, minLat, maxLon, maxLat] = parts;
+      clauses.push("lon BETWEEN @minLon AND @maxLon AND lat BETWEEN @minLat AND @maxLat");
+      params.minLon = minLon;
+      params.minLat = minLat;
+      params.maxLon = maxLon;
+      params.maxLat = maxLat;
+    }
+  }
+
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   return { where, params };
 }
