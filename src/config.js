@@ -12,7 +12,8 @@ export const config = {
   port: Number(process.env.PORT ?? 8787),
   logPretty: (process.env.LOG_PRETTY ?? "true").toLowerCase() === "true",
 
-  corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  corsOrigin: process.env.CORS_ORIGIN ?? "",
+  exposeRaw: (process.env.EXPOSE_RAW ?? "false").toLowerCase() === "true",
 
   sqlitePath: process.env.SQLITE_PATH ?? "./data/mn511.sqlite",
 

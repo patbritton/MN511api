@@ -232,7 +232,7 @@ function toGeoJsonFeatureFromNormalized(ev) {
       icon: ev.icon,
       status: ev.status,
       source: ev.source,
-      raw: ev.raw
+      ...(config.exposeRaw ? { raw: ev.raw } : {})
     }
   };
 }
@@ -307,7 +307,9 @@ export async function eventRoutes(app) {
     }
 
     const feature = toGeoJsonFeatureFromRow(row);
-    feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
+    if (config.exposeRaw) {
+      feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
+    }
 
     return { ok: true, feature };
   });

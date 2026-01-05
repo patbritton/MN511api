@@ -1,3 +1,4 @@
+import { config } from "../config.js";
 import { fetch511Graphql } from "../services/fetch511.js";
 import { normalizeWeatherStations } from "../services/normalizeNew.js";
 import { WEATHER_STATIONS_QUERY, buildListArgsVariables } from "../services/queries.js";
@@ -92,7 +93,7 @@ async function listWeatherStationsLive(app, req, reply) {
       routeDesignator: station.route_designator,
       weatherFields: station.weather_fields,
       lastUpdatedTimestamp: station.last_updated_timestamp,
-      raw: station.raw
+      ...(config.exposeRaw ? { raw: station.raw } : {})
     }
   }));
 
@@ -168,10 +169,12 @@ export async function weatherStationRoutes(app) {
     }
 
     const feature = toGeoJsonFeature(row);
-    try {
-      feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
-    } catch {
-      feature.properties.raw = null;
+    if (config.exposeRaw) {
+      try {
+        feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
+      } catch {
+        feature.properties.raw = null;
+      }
     }
 
     return { ok: true, feature };

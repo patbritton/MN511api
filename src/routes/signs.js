@@ -1,3 +1,4 @@
+import { config } from "../config.js";
 import { fetch511Graphql } from "../services/fetch511.js";
 import { normalizeSigns } from "../services/normalizeNew.js";
 import { SIGNS_QUERY, buildListArgsVariables } from "../services/queries.js";
@@ -125,7 +126,7 @@ async function listSignsLive(app, req, reply) {
         secondaryLinearReference: sign.secondary_linear_reference,
         views: sign.views,
         gantrySigns: sign.gantry_signs,
-        raw: sign.raw
+        ...(config.exposeRaw ? { raw: sign.raw } : {})
       }
     };
   });
@@ -215,10 +216,12 @@ export async function signRoutes(app) {
     }
 
     const feature = toGeoJsonFeature(row);
-    try {
-      feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
-    } catch {
-      feature.properties.raw = null;
+    if (config.exposeRaw) {
+      try {
+        feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
+      } catch {
+        feature.properties.raw = null;
+      }
     }
 
     return { ok: true, feature };

@@ -21,9 +21,38 @@ const app = Fastify({
 
 app.decorate("db", openDb());
 
+const corsOrigins = config.corsOrigin
+  .split(",")
+  .map((v) => v.trim())
+  .filter(Boolean);
+const corsWildcards = corsOrigins.filter((v) => v.startsWith("*.")).map((v) => v.slice(2));
+const corsExact = corsOrigins.filter((v) => !v.startsWith("*."));
+
 await app.register(cors, {
-  origin: config.corsOrigin,
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (corsExact.includes("*")) return cb(null, true);
+    if (corsExact.includes(origin)) return cb(null, true);
+    if (corsWildcards.length) {
+      try {
+        const host = new URL(origin).hostname.toLowerCase();
+        const ok = corsWildcards.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+        if (ok) return cb(null, true);
+      } catch {
+        return cb(null, false);
+      }
+    }
+    return cb(null, false);
+  },
   methods: ["GET", "OPTIONS"]
+});
+
+app.addHook("onSend", async (_req, reply, payload) => {
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("X-Frame-Options", "DENY");
+  reply.header("Referrer-Policy", "no-referrer");
+  reply.header("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  return payload;
 });
 
 await app.register(etag);
