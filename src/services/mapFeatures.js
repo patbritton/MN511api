@@ -14,7 +14,11 @@ query MapFeatures($input: MapFeaturesArgs!, $plowType: String) {
       }
       ... on Cluster { maxZoom }
       ... on Sign { signDisplayType }
-      ... on Event { priority }
+      ... on Event {
+        priority
+        lastUpdated { timestamp timezone }
+        beginTime { timestamp timezone }
+      }
       __typename
       ... on Camera {
         active

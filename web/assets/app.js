@@ -1,5 +1,17 @@
 // API Configuration
-const API_BASE = "https://511.mp.ls";
+const urlParams = new URLSearchParams(window.location.search);
+const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const localApiBase = `${window.location.protocol}//${window.location.hostname}:8787`;
+const rawApiBase = urlParams.get("apiBase") || window.MN511_API_BASE;
+
+function normalizeApiBase(base) {
+  if (!base) return base;
+  return base.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
+}
+
+const API_BASE =
+  normalizeApiBase(rawApiBase) ||
+  (isLocalHost ? localApiBase : "https://511.mp.ls");
 const DEFAULT_CENTER = [44.9778, -93.265];
 const DEFAULT_ZOOM = 10;
 
@@ -130,7 +142,8 @@ function buildLayerUrl(endpoint, bbox) {
   // For endpoints that need bbox parameter
   if (endpoint.includes("/api/")) {
     const bboxStr = [bbox.west, bbox.south, bbox.east, bbox.north].map(n => n.toFixed(5)).join(",");
-    return `${API_BASE}${endpoint}?bbox=${bboxStr}`;
+    const zoom = map.getZoom();
+    return `${API_BASE}${endpoint}?bbox=${bboxStr}&zoom=${zoom}`;
   }
   // For /v1/ endpoints (cached data)
   return `${API_BASE}${endpoint}`;
@@ -340,7 +353,7 @@ async function loadLayer(layerId) {
   const url = buildLayerUrl(layer.endpoint, bbox);
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
       console.error(`Failed to load ${layerId}: ${res.status}`);
       return { features: [] };
@@ -544,13 +557,29 @@ async function refreshLayer(layerId) {
     allFeatures = allFeatures.filter(f => f.properties?.layerId !== layerId);
     allFeatures.push(...geojson.features);
     renderList();
+    return;
   }
+
+  if (layerGroups[layerId]) {
+    map.removeLayer(layerGroups[layerId]);
+    delete layerGroups[layerId];
+  }
+  allFeatures = allFeatures.filter(f => f.properties?.layerId !== layerId);
+  renderList();
 }
 
 async function refreshAllLayers() {
   const enabledLayers = Object.values(LAYER_CATEGORIES)
     .flatMap(cat => cat.layers)
     .filter(layer => layer.enabled);
+
+  const enabledIds = new Set(enabledLayers.map(layer => layer.id));
+  Object.keys(layerGroups).forEach(layerId => {
+    if (!enabledIds.has(layerId)) {
+      map.removeLayer(layerGroups[layerId]);
+      delete layerGroups[layerId];
+    }
+  });
 
   allFeatures = [];
 

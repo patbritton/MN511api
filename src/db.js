@@ -12,6 +12,7 @@ export function openDb() {
   ensureDir(config.sqlitePath);
   const db = new Database(config.sqlitePath);
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
 
   const schemaPath = new URL("./schema.sql", import.meta.url);
   const schema = fs.readFileSync(schemaPath, "utf-8");

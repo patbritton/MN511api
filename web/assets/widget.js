@@ -1,6 +1,11 @@
 (function () {
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const localApiBase = `${window.location.protocol}//${window.location.hostname}:8787`;
+  const baseOverride = window.MN511_API_BASE || "";
+  const normalizedBase = baseOverride.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
+
   const DEFAULTS = {
-    apiBase: "https://511.mp.ls/api",
+    apiBase: normalizedBase || (isLocalHost ? localApiBase : "https://511.mp.ls/api"),
     bbox: "-93.35,44.90,-93.15,45.02",
     zoom: 12,
     endpoint: "incidents",

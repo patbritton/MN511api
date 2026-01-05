@@ -30,14 +30,75 @@ function pickGeometry(feature) {
     return { geom_type: "Point", lat, lon, coords: [lon, lat] };
   }
 
-  // In your sample, LineString uses an encoded string.
-  // We'll keep geom_type as "LineString" but not decode coordinates here.
+  // Handle LineString encoded polylines so map clients can render them.
   if (g.type === "LineString") {
-    const coords = Array.isArray(g.coordinates) ? g.coordinates : null;
+    let coords = Array.isArray(g.coordinates) ? g.coordinates : null;
+    if (!coords && typeof g.coordinates === "string") {
+      coords = decodePolyline(g.coordinates);
+    }
+    coords = normalizeLineCoords(coords);
     return { geom_type: "LineString", lat: null, lon: null, coords };
   }
 
   return { geom_type: String(g.type ?? null), lat: null, lon: null, coords: null };
+}
+
+function decodePolyline(encoded) {
+  if (!encoded || typeof encoded !== "string") return null;
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const coordinates = [];
+
+  while (index < encoded.length) {
+    let b;
+    let shift = 0;
+    let result = 0;
+
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const deltaLat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += deltaLat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const deltaLng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += deltaLng;
+
+    // GeoJSON expects [lon, lat]
+    coordinates.push([lng / 1e5, lat / 1e5]);
+  }
+
+  return coordinates.length ? coordinates : null;
+}
+
+function normalizeLineCoords(coords) {
+  if (!Array.isArray(coords) || coords.length === 0) return coords;
+  const first = coords[0];
+  if (!Array.isArray(first) || first.length < 2) return coords;
+  const [a, b] = first;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return coords;
+  const looksSwapped = Math.abs(a) <= 90 && Math.abs(b) > 90;
+  if (!looksSwapped) return coords;
+  return coords.map(([x, y]) => [y, x]);
+}
+
+function normalizeTimestampValue(value) {
+  if (value === null || value === undefined) return null;
+  let ts = Number(value);
+  if (!Number.isFinite(ts)) return null;
+  if (ts < 2000000000) {
+    ts *= 1000;
+  }
+  return ts;
 }
 
 export function normalizeMapFeaturesResponse(json) {
@@ -64,6 +125,9 @@ export function normalizeMapFeaturesResponse(json) {
       (firstFeature?.id ? String(firstFeature.id).split("-").slice(0, 2).join("-") : null) ??
       cryptoRandomIdFallback(e);
 
+    const lastUpdatedMs = normalizeTimestampValue(e?.lastUpdated?.timestamp ?? null);
+    const lastUpdatedAt = lastUpdatedMs ? new Date(lastUpdatedMs).toISOString() : null;
+
     out.push({
       id,
       uri: e.uri ?? null,
@@ -74,6 +138,8 @@ export function normalizeMapFeaturesResponse(json) {
       direction,
       severity: typeof e.priority === "number" ? e.priority : null, // you can change mapping later
       priority: typeof e.priority === "number" ? e.priority : null,
+      last_updated_timestamp: lastUpdatedMs,
+      last_updated_at: lastUpdatedAt,
 
       geom_type,
       lat,

@@ -215,6 +215,15 @@ function toGeoJsonFeatureFromNormalized(ev) {
     ? [ev.bbox_min_lon, ev.bbox_min_lat, ev.bbox_max_lon, ev.bbox_max_lat]
     : undefined;
 
+  if (!geometry && bbox) {
+    const [minLon, minLat, maxLon, maxLat] = bbox;
+    const centerLon = (minLon + maxLon) / 2;
+    const centerLat = (minLat + maxLat) / 2;
+    if (Number.isFinite(centerLon) && Number.isFinite(centerLat)) {
+      geometry = { type: "Point", coordinates: [centerLon, centerLat] };
+    }
+  }
+
   return {
     type: "Feature",
     id: ev.id,
@@ -229,6 +238,8 @@ function toGeoJsonFeatureFromNormalized(ev) {
       direction: ev.direction,
       severity: ev.severity,
       priority: ev.priority,
+      last_updated_at: ev.last_updated_at ?? null,
+      last_updated_timestamp: ev.last_updated_timestamp ?? null,
       icon: ev.icon,
       status: ev.status,
       source: ev.source,
