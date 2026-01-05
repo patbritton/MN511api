@@ -110,16 +110,31 @@ node extract-graphql.js
 ```
 Creates `extracted-graphql.json` from `511mn.org.har`.
 
-## WordPress Plugin
+## WordPress Integration
 
-A WordPress plugin is included in the `wp/mn511-importer/` directory that:
+**Complete WordPress integration available** in the `wp/` directory:
 
-- Fetches and caches API data every 30 minutes
-- Creates custom post types for Alerts, Weather Stations, and Signs
-- Provides shortcodes: `[mn511]`, `[mn511_weather]`, `[mn511_signs]`
-- Includes basic styling
+### Enhanced MPLS Hub Plugin
+- **Smart API synchronization** with unique identifier system
+- **Auto-updates** existing alerts instead of creating duplicates
+- **Auto-cleanup** of expired/resolved alerts
+- **Frontend display components** with professional styling
+- **Road-specific traffic views** for better organization
+- **Weather stations and message signs** integration
 
-See [wp/mn511-importer/README.md](wp/mn511-importer/README.md) for installation and usage.
+### Quick Start
+1. See **[wp/DOCS/QUICKSTART.md](wp/DOCS/QUICKSTART.md)** for 5-minute setup
+2. See **[wp/DOCS/WORDPRESS_INTEGRATION.md](wp/DOCS/WORDPRESS_INTEGRATION.md)** for comprehensive guide
+3. See **[wp/DOCS/WORDPRESS_IMPLEMENTATION_SUMMARY.md](wp/DOCS/WORDPRESS_IMPLEMENTATION_SUMMARY.md)** for technical details
+
+### Features
+- ✅ No duplicate alerts (unique ID tracking)
+- ✅ Alert banner for homepage
+- ✅ Traffic organized by road (I-94, I-35W, etc.)
+- ✅ Weather stations with live RWIS data
+- ✅ Message signs with current messages
+- ✅ Hourly auto-sync
+- ✅ Professional styling
 
 ## Web Map + Widget
 

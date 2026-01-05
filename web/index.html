@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MN511 Map</title>
+    <title>MN511 Traffic & Road Conditions</title>
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -16,30 +16,108 @@
     <main class="map-shell">
       <div id="map"></div>
 
-      <div class="map-badge">
-        <div class="app-title">MN511 Live Map</div>
-        <div class="app-subtitle">Live layers from your API</div>
-      </div>
-
-      <aside class="map-panel">
-        <div class="sidebar-tabs">
-          <button class="tab-btn active" data-tab="layers">Layers</button>
-          <button class="tab-btn" data-tab="legend">Legend</button>
-          <button class="tab-btn" data-tab="list">List</button>
+      <!-- Top Header Badge -->
+      <header class="map-header">
+        <div class="header-brand">
+          <div class="brand-icon">🚦</div>
+          <div>
+            <div class="brand-title">MN511 Live Map</div>
+            <div class="brand-subtitle">Traffic, Weather & Road Conditions</div>
+          </div>
         </div>
+        <div class="header-status">
+          <span class="status-dot"></span>
+          <span id="last-update">Loading...</span>
+        </div>
+      </header>
+
+      <!-- Right Sidebar Panel -->
+      <aside class="map-panel">
+        <div class="sidebar-header">
+          <div class="sidebar-tabs">
+            <button type="button" class="tab-btn active" data-tab="layers">
+              <span class="tab-icon">📍</span>
+              Layers
+            </button>
+            <button type="button" class="tab-btn" data-tab="list">
+              <span class="tab-icon">📋</span>
+              List
+            </button>
+            <button type="button" class="tab-btn" data-tab="legend">
+              <span class="tab-icon">ℹ️</span>
+              Legend
+            </button>
+          </div>
+        </div>
+
         <div class="sidebar-content">
+          <!-- Layers Tab -->
           <div id="tab-layers" class="tab-panel active">
-            <div id="layer-list" class="layer-list"></div>
+            <div class="layer-section">
+              <div class="section-header">
+                <h3 class="section-title">
+                  <span class="section-icon">⚠️</span>
+                  Traffic Events
+                </h3>
+                <button type="button" class="section-toggle" data-section="traffic">Select All</button>
+              </div>
+              <div id="traffic-layers" class="layer-group"></div>
+            </div>
+
+            <div class="layer-section">
+              <div class="section-header">
+                <h3 class="section-title">
+                  <span class="section-icon">🌡️</span>
+                  Weather & Conditions
+                </h3>
+                <button type="button" class="section-toggle" data-section="weather">Select All</button>
+              </div>
+              <div id="weather-layers" class="layer-group"></div>
+            </div>
+
+            <div class="layer-section">
+              <div class="section-header">
+                <h3 class="section-title">
+                  <span class="section-icon">📍</span>
+                  Services & Info
+                </h3>
+                <button type="button" class="section-toggle" data-section="services">Select All</button>
+              </div>
+              <div id="services-layers" class="layer-group"></div>
+            </div>
           </div>
-          <div id="tab-legend" class="tab-panel">
-            <div id="legend" class="legend"></div>
-          </div>
+
+          <!-- List Tab -->
           <div id="tab-list" class="tab-panel">
-            <div class="panel-title">Latest Alerts</div>
+            <div class="list-header">
+              <div class="panel-title">Active Alerts</div>
+              <div class="list-stats">
+                <span id="list-count">0</span> items
+              </div>
+            </div>
+            <div class="list-filters">
+              <button type="button" class="filter-chip active" data-filter="all">All</button>
+              <button type="button" class="filter-chip" data-filter="high">High Priority</button>
+              <button type="button" class="filter-chip" data-filter="recent">Recent</button>
+            </div>
             <div id="list" class="panel-list"></div>
+          </div>
+
+          <!-- Legend Tab -->
+          <div id="tab-legend" class="tab-panel">
+            <div class="panel-title">Map Legend</div>
+            <div id="legend" class="legend"></div>
           </div>
         </div>
       </aside>
+
+      <!-- Map Controls -->
+      <div class="map-controls">
+        <button type="button" id="zoom-in" class="map-control-btn" title="Zoom In">+</button>
+        <button type="button" id="zoom-out" class="map-control-btn" title="Zoom Out">−</button>
+        <button type="button" id="locate" class="map-control-btn" title="My Location">📍</button>
+        <button type="button" id="refresh" class="map-control-btn" title="Refresh Data">🔄</button>
+      </div>
     </main>
 
     <script
