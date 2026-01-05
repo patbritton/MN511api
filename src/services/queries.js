@@ -143,6 +143,7 @@ query ($input: ListArgs!) {
         uri
         icon
         color
+        bbox
         location {
           routeDesignator
         }

@@ -35,7 +35,16 @@ function buildWhere(query) {
     const parts = String(query.bbox).split(",").map((x) => Number(x.trim()));
     if (parts.length === 4 && parts.every(Number.isFinite)) {
       const [minLon, minLat, maxLon, maxLat] = parts;
-      clauses.push("lon BETWEEN @minLon AND @maxLon AND lat BETWEEN @minLat AND @maxLat");
+      clauses.push(
+        `NOT (
+          lon < @minLon OR
+          lon > @maxLon OR
+          lat < @minLat OR
+          lat > @maxLat OR
+          lat IS NULL OR
+          lon IS NULL
+        )`
+      );
       params.minLon = minLon;
       params.minLat = minLat;
       params.maxLon = maxLon;

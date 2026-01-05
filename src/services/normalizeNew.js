@@ -89,9 +89,10 @@ export function normalizeCameraViews(graphqlResponse) {
     // Extract location from parent collection if available
     let lat = null;
     let lon = null;
-    if (view.parentCollection?.location) {
-      // Parent location might have coordinates in some field
-      // For now, we'll leave this as null unless we find explicit coords
+    const bbox = view.parentCollection?.bbox;
+    if (Array.isArray(bbox) && bbox.length === 4) {
+      lon = (bbox[0] + bbox[2]) / 2;
+      lat = (bbox[1] + bbox[3]) / 2;
     }
 
     return {

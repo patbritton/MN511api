@@ -6,6 +6,36 @@ import { ingestWeatherStations, ingestSigns, ingestCameraViews } from "./ingestN
 
 let ingestInProgress = false;
 
+function syncCoordinates(db) {
+  db.prepare(
+    `
+    UPDATE weather_stations
+    SET
+      lat = (SELECT lat FROM events WHERE events.uri = weather_stations.uri AND events.lat IS NOT NULL),
+      lon = (SELECT lon FROM events WHERE events.uri = weather_stations.uri AND events.lon IS NOT NULL)
+    WHERE EXISTS (
+      SELECT 1 FROM events
+      WHERE events.uri = weather_stations.uri
+      AND events.lat IS NOT NULL
+    )
+    `
+  ).run();
+
+  db.prepare(
+    `
+    UPDATE camera_views
+    SET
+      lat = (SELECT lat FROM events WHERE events.uri = camera_views.parent_uri AND events.lat IS NOT NULL),
+      lon = (SELECT lon FROM events WHERE events.uri = camera_views.parent_uri AND events.lon IS NOT NULL)
+    WHERE EXISTS (
+      SELECT 1 FROM events
+      WHERE events.uri = camera_views.parent_uri
+      AND events.lat IS NOT NULL
+    )
+    `
+  ).run();
+}
+
 function upsertEvent(db, ev, nowIso) {
   const existing = db.prepare(`SELECT id, first_seen_at FROM events WHERE id = ?`).get(ev.id);
 
@@ -74,14 +104,13 @@ export async function runIngestOnce(app) {
     // For statewide coverage you may need multiple bbox tiles.
     const { query, variables } = buildMapFeaturesRequest({
       bbox: {
-        // Example: Twin Cities-ish bbox; replace with yours
-        north: 45.3,
-        south: 44.6,
-        east: -92.7,
-        west: -93.8
+        north: 49.68212,
+        south: 42.52101,
+        east: -87.706,
+        west: -95.14374
       },
       zoom: 10,
-      layerSlugs: ["incidents", "closures", "cameras", "roadConditions", "weatherEvents"]
+      layerSlugs: ["incidents", "closures", "cameras", "roadConditions", "weatherEvents", "rwis"]
     });
 
     const json = await fetch511Graphql({ query, variables });
@@ -121,6 +150,13 @@ export async function runIngestOnce(app) {
       await ingestCameraViews(app, bbox);
     } catch (e) {
       app.log.error({ err: e }, "Camera views ingest failed");
+    }
+
+    try {
+      syncCoordinates(app.db);
+      app.log.info("Coordinate sync complete");
+    } catch (e) {
+      app.log.error({ err: e }, "Coordinate sync failed");
     }
 
     return { ok: true, ingested: normalized.length };
