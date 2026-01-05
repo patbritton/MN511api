@@ -11,7 +11,7 @@ import { healthRoutes } from "./routes/health.js";
 import { eventRoutes } from "./routes/events.js";
 import { weatherStationRoutes } from "./routes/weatherStations.js";
 import { signRoutes } from "./routes/signs.js";
-import { runIngestOnce } from "./services/ingest.js";
+import { runEventsIngest, runStaticIngest, runIngestOnce } from "./services/ingest.js";
 
 const app = Fastify({
   logger: config.logPretty
@@ -75,11 +75,19 @@ try {
 }
 
 // Schedule ingest
-cron.schedule(config.ingestCron, async () => {
+cron.schedule(config.ingestEventsCron, async () => {
   try {
-    await runIngestOnce(app);
+    await runEventsIngest(app);
   } catch (e) {
-    app.log.error({ err: e }, "Scheduled ingest failed");
+    app.log.error({ err: e }, "Events ingest failed");
+  }
+});
+
+cron.schedule(config.ingestStaticCron, async () => {
+  try {
+    await runStaticIngest(app);
+  } catch (e) {
+    app.log.error({ err: e }, "Static ingest failed");
   }
 });
 

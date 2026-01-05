@@ -2,9 +2,11 @@ import { fetch511Graphql } from "./fetch511.js";
 import { normalizeMapFeaturesResponse } from "./normalize.js";
 import { purgeAndMark } from "./purge.js";
 import { buildMapFeaturesRequest } from "./mapFeatures.js";
+import { fetchDashboardCollections } from "./dashboard.js";
 import { ingestWeatherStations, ingestSigns, ingestCameraViews } from "./ingestNew.js";
 
-let ingestInProgress = false;
+let eventsIngestInProgress = false;
+let staticIngestInProgress = false;
 
 function syncCoordinates(db) {
   db.prepare(
@@ -89,32 +91,103 @@ function upsertEvent(db, ev, nowIso) {
   });
 }
 
-export async function runIngestOnce(app) {
-  if (ingestInProgress) {
-    app.log.warn("Ingest already running, skipping new run");
+function normalizeDashboardTimestamp(value) {
+  if (value === null || value === undefined) return null;
+  let ts = Number(value);
+  if (!Number.isFinite(ts)) return null;
+  if (ts < 2000000000) ts *= 1000;
+  return ts;
+}
+
+function buildTiles(bbox, rows, cols) {
+  const tiles = [];
+  const latStep = (bbox.north - bbox.south) / rows;
+  const lonStep = (bbox.east - bbox.west) / cols;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const south = bbox.south + r * latStep;
+      const north = south + latStep;
+      const west = bbox.west + c * lonStep;
+      const east = west + lonStep;
+      tiles.push({ north, south, east, west });
+    }
+  }
+
+  return tiles;
+}
+
+const METRO_BBOX = {
+  north: 48.06282,
+  south: 44.48805,
+  east: -90.78558,
+  west: -96.58636
+};
+
+export async function runEventsIngest(app) {
+  if (eventsIngestInProgress) {
+    app.log.warn("Events ingest already running, skipping new run");
     return { ok: false, skipped: true };
   }
 
-  ingestInProgress = true;
+  eventsIngestInProgress = true;
   const nowIso = new Date().toISOString();
 
   try {
-    const twinCitiesBbox = {
-      north: 45.4,
-      south: 44.4,
-      east: -92.5,
-      west: -94.0
-    };
+    const tiles = buildTiles(METRO_BBOX, 3, 3);
+    const byId = new Map();
 
-    const { query, variables } = buildMapFeaturesRequest({
-      bbox: twinCitiesBbox,
-      zoom: 11,
-      layerSlugs: ["incidents", "closures", "cameras", "roadConditions"]
-    });
+    for (const tile of tiles) {
+      const { query, variables } = buildMapFeaturesRequest({
+        bbox: tile,
+        zoom: 8,
+        layerSlugs: ["metroTrafficMap"]
+      });
 
-    const json = await fetch511Graphql({ query, variables });
+      const json = await fetch511Graphql({ query, variables });
+      const normalized = normalizeMapFeaturesResponse(json);
 
-    const normalized = normalizeMapFeaturesResponse(json);
+      for (const ev of normalized) {
+        if (!byId.has(ev.id)) {
+          byId.set(ev.id, ev);
+        }
+      }
+    }
+
+    const normalized = Array.from(byId.values());
+
+    try {
+      const collections = await fetchDashboardCollections([
+        "constructionReports",
+        "roadConditions",
+        "ferryReports",
+        "towingProhibitedReports",
+        "truckersReports",
+        "wazeReports",
+        "weatherWarningsAreaEvents",
+        "winterDriving",
+        "roadReports",
+        "wazeJams",
+        "metroTrafficMap",
+        "future"
+      ]);
+      const updates = new Map();
+      for (const item of collections) {
+        const uri = item?.uri;
+        const ts = normalizeDashboardTimestamp(item?.lastUpdated?.timestamp);
+        if (uri && ts) updates.set(uri, ts);
+      }
+      for (const ev of normalized) {
+        if (!ev.uri || ev.last_updated_timestamp) continue;
+        const ts = updates.get(ev.uri);
+        if (ts) {
+          ev.last_updated_timestamp = ts;
+          ev.last_updated_at = new Date(ts).toISOString();
+        }
+      }
+    } catch (e) {
+      app.log.warn({ err: e }, "Dashboard enrichment failed");
+    }
 
     const tx = app.db.transaction(() => {
       for (const ev of normalized) upsertEvent(app.db, ev, nowIso);
@@ -125,23 +198,35 @@ export async function runIngestOnce(app) {
 
     app.log.info({ count: normalized.length }, "Events ingest complete");
 
-    // Ingest new data types
-    const bbox = twinCitiesBbox;
+    return { ok: true, ingested: normalized.length };
+  } finally {
+    eventsIngestInProgress = false;
+  }
+}
 
+export async function runStaticIngest(app) {
+  if (staticIngestInProgress) {
+    app.log.warn("Static ingest already running, skipping new run");
+    return { ok: false, skipped: true };
+  }
+
+  staticIngestInProgress = true;
+
+  try {
     try {
-      await ingestWeatherStations(app, bbox);
+      await ingestWeatherStations(app, METRO_BBOX);
     } catch (e) {
       app.log.error({ err: e }, "Weather stations ingest failed");
     }
 
     try {
-      await ingestSigns(app, bbox);
+      await ingestSigns(app, METRO_BBOX);
     } catch (e) {
       app.log.error({ err: e }, "Signs ingest failed");
     }
 
     try {
-      await ingestCameraViews(app, bbox);
+      await ingestCameraViews(app, METRO_BBOX);
     } catch (e) {
       app.log.error({ err: e }, "Camera views ingest failed");
     }
@@ -153,8 +238,13 @@ export async function runIngestOnce(app) {
       app.log.error({ err: e }, "Coordinate sync failed");
     }
 
-    return { ok: true, ingested: normalized.length };
+    return { ok: true };
   } finally {
-    ingestInProgress = false;
+    staticIngestInProgress = false;
   }
+}
+
+export async function runIngestOnce(app) {
+  await runEventsIngest(app);
+  await runStaticIngest(app);
 }

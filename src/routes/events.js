@@ -160,9 +160,63 @@ async function listLive(app, req, reply, layerKey, opts = {}) {
   const filtered = Array.isArray(opts.categories)
     ? normalized.filter((ev) => opts.categories.includes(ev.category))
     : normalized;
-  const features = filtered.map((ev) => toGeoJsonFeatureFromNormalized(ev));
+  const cameraViewsByParent =
+    layerKey === "cameras" ? loadCameraViewsByParent(app, filtered) : null;
+  const features = filtered.map((ev) => {
+    if (cameraViewsByParent && ev.uri && cameraViewsByParent[ev.uri]) {
+      ev.camera_views = cameraViewsByParent[ev.uri];
+    }
+    return toGeoJsonFeatureFromNormalized(ev);
+  });
 
   return { ok: true, count: features.length, type: "FeatureCollection", features };
+}
+
+function loadCameraViewsByParent(app, events) {
+  const uris = events.map((ev) => ev.uri).filter(Boolean);
+  if (uris.length === 0) return null;
+
+  const placeholders = uris.map(() => "?").join(",");
+  const rows = app.db
+    .prepare(
+      `SELECT
+        parent_uri,
+        uri,
+        title,
+        category,
+        icon,
+        url,
+        sources,
+        last_updated_timestamp
+      FROM camera_views
+      WHERE parent_uri IN (${placeholders})`
+    )
+    .all(...uris);
+
+  const map = {};
+  for (const row of rows) {
+    let sources = null;
+    if (row.sources) {
+      try {
+        sources = JSON.parse(row.sources);
+      } catch {
+        sources = null;
+      }
+    }
+    const view = {
+      uri: row.uri,
+      title: row.title,
+      category: row.category,
+      icon: row.icon,
+      url: row.url,
+      sources,
+      last_updated_timestamp: row.last_updated_timestamp
+    };
+    if (!map[row.parent_uri]) map[row.parent_uri] = [];
+    map[row.parent_uri].push(view);
+  }
+
+  return map;
 }
 
 function toGeoJsonFeatureFromRow(r) {
@@ -240,6 +294,10 @@ function toGeoJsonFeatureFromNormalized(ev) {
       priority: ev.priority,
       last_updated_at: ev.last_updated_at ?? null,
       last_updated_timestamp: ev.last_updated_timestamp ?? null,
+      ...(Array.isArray(ev.camera_views) && ev.camera_views.length > 0
+        ? { cameraViews: ev.camera_views }
+        : {}),
+      ...(typeof ev.camera_active === "boolean" ? { cameraActive: ev.camera_active } : {}),
       icon: ev.icon,
       status: ev.status,
       source: ev.source,

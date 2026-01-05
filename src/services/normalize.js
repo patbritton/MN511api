@@ -118,6 +118,16 @@ export function normalizeMapFeaturesResponse(json) {
     const { geom_type, lat, lon, coords } = pickGeometry(firstFeature);
 
     const category = categoryFromIcon(iconUrl);
+    const cameraViews = Array.isArray(e?.views)
+      ? e.views
+          .map((view) => ({
+            uri: view?.uri ?? null,
+            url: view?.url ?? null,
+            category: view?.category ?? null,
+            sources: view?.sources ?? null
+          }))
+          .filter((view) => view.url || (Array.isArray(view.sources) && view.sources.length > 0))
+      : [];
 
     // ID strategy: prefer the "uri" suffix or the feature id base
     const id =
@@ -154,6 +164,8 @@ export function normalizeMapFeaturesResponse(json) {
       icon: iconUrl ? iconUrl.split("/").pop().replace(".svg", "") : null,
       status: "active",
       source: "MN 511",
+      camera_active: typeof e?.active === "boolean" ? e.active : null,
+      camera_views: cameraViews,
       raw: e
     });
   }

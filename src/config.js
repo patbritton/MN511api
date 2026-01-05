@@ -18,6 +18,9 @@ export const config = {
   sqlitePath: process.env.SQLITE_PATH ?? "./data/mn511.sqlite",
 
   ingestCron: process.env.INGEST_CRON ?? "*/5 * * * *",
+  ingestEventsCron:
+    process.env.INGEST_EVENTS_CRON ?? process.env.INGEST_CRON ?? "*/2 * * * *",
+  ingestStaticCron: process.env.INGEST_STATIC_CRON ?? "0 3 * * *",
 
   staleAfterMinutes: Number(process.env.STALE_AFTER_MINUTES ?? 30),
   hardExpireMinutes: Number(process.env.HARD_EXPIRE_MINUTES ?? 180),

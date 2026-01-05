@@ -162,6 +162,34 @@ query ($input: ListArgs!) {
 }
 `;
 
+export const DASHBOARD_QUERY = `
+query Dashboard(
+  $layerSlugs: [String!]!
+  $nearbyViewLimit: Int!
+  $isCamerasEnabled: Boolean!
+  $showCameraCarousel: Boolean!
+  $isLoggedIn: Boolean!
+  $maxPriority: Int
+  $showCommercialQuantities: Boolean!
+) {
+  dashboardQuery {
+    collections(layerSlugs: $layerSlugs, maxPriority: $maxPriority) {
+      uri
+      title
+      bbox
+      icon
+      color
+      ... on Event {
+        lastUpdated { timestamp timezone }
+        beginTime { timestamp timezone }
+        priority
+        description
+      }
+    }
+  }
+}
+`;
+
 export function buildListArgsVariables(bbox) {
   return {
     input: {
@@ -176,5 +204,17 @@ export function buildListArgsVariables(bbox) {
       recordLimit: 1000,
       recordOffset: 0
     }
+  };
+}
+
+export function buildDashboardVariables(layerSlugs) {
+  return {
+    layerSlugs,
+    maxPriority: 1,
+    nearbyViewLimit: 1,
+    isCamerasEnabled: true,
+    showCameraCarousel: false,
+    isLoggedIn: false,
+    showCommercialQuantities: false
   };
 }
