@@ -19,8 +19,8 @@ const LAYER_CATEGORIES = {
     title: "Weather & Conditions",
     icon: "🌡️",
     layers: [
-      { id: "weather-stations", label: "Weather Stations", icon: "🌡️", color: "#6f42c1", endpoint: "/v1/weather-stations", enabled: true },
-      { id: "signs", label: "Message Signs", icon: "🚦", color: "#28a745", endpoint: "/v1/signs", enabled: true },
+      { id: "weather-stations", label: "Weather Stations", icon: "🌡️", color: "#6f42c1", endpoint: "/v1/weather-stations", enabled: false },
+      { id: "signs", label: "Message Signs", icon: "🚦", color: "#28a745", endpoint: "/v1/signs", enabled: false },
       { id: "plows", label: "Snow Plows", icon: "🚜", color: "#17a2b8", endpoint: "/api/plows", enabled: false },
       { id: "road-conditions", label: "Road Conditions", icon: "🛣️", color: "#6c757d", endpoint: "/api/road-conditions", enabled: false },
       { id: "weather-events", label: "Weather Events", icon: "❄️", color: "#b197fc", endpoint: "/api/weather-events", enabled: false }
