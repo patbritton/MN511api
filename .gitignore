@@ -25,3 +25,5 @@ wp/
 *.kdbx
 Thumbs.db
 .DS_Store
+IMPLEMENTATION_SUMMARY.md
+.gitignore

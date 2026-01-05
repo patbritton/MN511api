@@ -27,10 +27,12 @@ A comprehensive REST API for Minnesota 511 traffic, weather, and road condition 
     MN511_GRAPHQL_URL=https://graphql.mn511.org/
     CORS_ORIGIN=http://localhost:8788,http://127.0.0.1:8788
     NODE_TLS_REJECT_UNAUTHORIZED=0
+    MN511_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36
     ```
     *   `MN511_GRAPHQL_URL`: The official GraphQL endpoint for the MN511 API.
     *   `CORS_ORIGIN`: The origin(s) to allow for Cross-Origin Resource Sharing. The default frontend server runs on port `8788`.
     *   `NODE_TLS_REJECT_UNAUTHORIZED`: This is necessary to bypass the self-signed certificate error from the GraphQL endpoint in a development environment.
+    *   `MN511_USER_AGENT`: Sets a common browser user agent to avoid being blocked by the upstream server.
 
 3.  **Start the development server:**
     ```bash
