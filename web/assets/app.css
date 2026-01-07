@@ -1297,6 +1297,7 @@ body {
 @media (max-width: 1024px) {
   .map-header {
     right: 20px;
+    max-width: calc(100vw - 340px);
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
@@ -1310,13 +1311,19 @@ body {
 
 @media (max-width: 768px) {
   .map-header {
-    position: relative;
+    position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    border-radius: 0;
+    max-width: none;
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 0 0 14px 14px;
     border-left: none;
     border-right: none;
+    border-top: none;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
   .map-panel {
@@ -1325,16 +1332,97 @@ body {
     left: 0;
     right: 0;
     width: 100%;
-    max-height: 60vh;
-    border-radius: 20px 20px 0 0;
+    max-height: 55vh;
+    border-radius: 18px 18px 0 0;
     border-bottom: none;
     resize: none;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .map-controls {
     bottom: auto;
-    top: 80px;
-    left: 10px;
+    top: 88px;
+    right: 12px;
+    left: auto;
+    gap: 6px;
+  }
+
+  .resize-handle {
+    display: none;
+  }
+
+  .sidebar-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .tab-btn {
+    padding: 8px 6px;
+    font-size: 11px;
+    flex-direction: column;
+  }
+
+  .tab-icon {
+    font-size: 14px;
+  }
+
+  .header-status {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .header-auth {
+    margin-left: auto;
+  }
+
+  .auth-user-name {
+    max-width: 90px;
+  }
+
+  .map-panel::before {
+    content: "";
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-color);
+    margin: 8px auto 0;
+  }
+
+  .sidebar-header {
+    padding-top: 6px;
+  }
+
+  .sidebar-content {
+    padding-bottom: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .map-header {
+    padding-top: calc(10px + env(safe-area-inset-top));
+  }
+
+  .brand-title {
+    font-size: 14px;
+  }
+
+  .brand-subtitle {
+    font-size: 10px;
+  }
+
+  .map-controls {
+    top: 96px;
+  }
+
+  .map-control-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+
+  .map-panel {
+    max-height: 62vh;
   }
 }
 
