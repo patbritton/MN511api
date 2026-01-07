@@ -1,12 +1,21 @@
 import { fetch511Graphql } from "./fetch511.js";
 import { normalizeMapFeaturesResponse } from "./normalize.js";
-import { purgeAndMark } from "./purge.js";
 import { buildMapFeaturesRequest } from "./mapFeatures.js";
 import { fetchDashboardCollections } from "./dashboard.js";
 import { ingestWeatherStations, ingestSigns, ingestCameraViews } from "./ingestNew.js";
 
 let eventsIngestInProgress = false;
 let staticIngestInProgress = false;
+
+function hashString(value) {
+  if (value === null || value === undefined) return null;
+  const str = String(value);
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16);
+}
 
 function syncCoordinates(db) {
   db.prepare(
@@ -39,17 +48,46 @@ function syncCoordinates(db) {
 }
 
 function upsertEvent(db, ev, nowIso) {
-  const existing = db.prepare(`SELECT id, first_seen_at FROM events WHERE id = ?`).get(ev.id);
+  const existing = db
+    .prepare(
+      `SELECT
+        id,
+        first_seen_at,
+        last_updated_at,
+        source_updated_timestamp,
+        source_fingerprint,
+        source_version
+      FROM events
+      WHERE id = ?`
+    )
+    .get(ev.id);
 
   const firstSeen = existing?.first_seen_at ?? nowIso;
+  const rawJson = JSON.stringify(ev.raw ?? {});
+  const sourceFingerprint = hashString(rawJson);
+  const sourceUpdatedTimestamp = ev.last_updated_timestamp ?? null;
+  const sourceUpdatedAt = ev.last_updated_at ?? null;
 
-  const lastUpdatedAt = ev.last_updated_at ?? nowIso;
+  const hasSourceUpdate =
+    (Number.isFinite(sourceUpdatedTimestamp) && sourceUpdatedTimestamp !== existing?.source_updated_timestamp) ||
+    (sourceFingerprint !== null && sourceFingerprint !== existing?.source_fingerprint);
+
+  const nextVersion = existing
+    ? (existing.source_version ?? 1) + (hasSourceUpdate ? 1 : 0)
+    : 1;
+
+  const lastUpdatedAt = hasSourceUpdate
+    ? (sourceUpdatedAt ?? nowIso)
+    : (existing?.last_updated_at ?? sourceUpdatedAt ?? nowIso);
+  const sourceId = ev.uri ?? ev.id ?? null;
+
   db.prepare(
     `INSERT INTO events (
       id, uri, title, tooltip, category, road, direction, severity, priority,
       geom_type, lat, lon,
       bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat,
       icon, status, source, raw_json,
+      source_id, source_updated_at, source_updated_timestamp, source_version, source_fingerprint,
       first_seen_at, last_seen_at, last_updated_at
     )
     VALUES (
@@ -57,6 +95,7 @@ function upsertEvent(db, ev, nowIso) {
       @geom_type, @lat, @lon,
       @bbox_min_lon, @bbox_min_lat, @bbox_max_lon, @bbox_max_lat,
       @icon, @status, @source, @raw_json,
+      @source_id, @source_updated_at, @source_updated_timestamp, @source_version, @source_fingerprint,
       @first_seen_at, @last_seen_at, @last_updated_at
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -79,12 +118,22 @@ function upsertEvent(db, ev, nowIso) {
       status='active',
       source=excluded.source,
       raw_json=excluded.raw_json,
+      source_id=excluded.source_id,
+      source_updated_at=excluded.source_updated_at,
+      source_updated_timestamp=excluded.source_updated_timestamp,
+      source_version=excluded.source_version,
+      source_fingerprint=excluded.source_fingerprint,
       last_seen_at=excluded.last_seen_at,
       last_updated_at=excluded.last_updated_at
     `
   ).run({
     ...ev,
-    raw_json: JSON.stringify(ev.raw),
+    raw_json: rawJson,
+    source_id: sourceId,
+    source_updated_at: sourceUpdatedAt,
+    source_updated_timestamp: sourceUpdatedTimestamp,
+    source_version: nextVersion,
+    source_fingerprint: sourceFingerprint,
     first_seen_at: firstSeen,
     last_seen_at: nowIso,
     last_updated_at: lastUpdatedAt
@@ -191,7 +240,12 @@ export async function runEventsIngest(app) {
 
     const tx = app.db.transaction(() => {
       for (const ev of normalized) upsertEvent(app.db, ev, nowIso);
-      purgeAndMark(app.db);
+      app.db
+        .prepare(
+          `DELETE FROM events
+           WHERE source = @source AND last_seen_at < @nowIso`
+        )
+        .run({ source: "MN 511", nowIso });
     });
 
     tx();

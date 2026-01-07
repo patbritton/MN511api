@@ -13,7 +13,9 @@
       "Bash(node:*)",
       "Bash(git commit:*)",
       "Bash(git push)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(mkdir:*)",
+      "Bash(dir:*)"
     ]
   }
 }

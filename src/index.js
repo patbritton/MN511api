@@ -31,7 +31,6 @@ const corsExact = corsOrigins.filter((v) => !v.startsWith("*."));
 await app.register(cors, {
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
-    if (corsExact.includes("*")) return cb(null, true);
     if (corsExact.includes(origin)) return cb(null, true);
     if (corsWildcards.length) {
       try {

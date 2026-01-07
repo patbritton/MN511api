@@ -3,15 +3,24 @@ const urlParams = new URLSearchParams(window.location.search);
 const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
 const localApiBase = `${window.location.protocol}//${window.location.hostname}:8787`;
 const rawApiBase = urlParams.get("apiBase") || window.MN511_API_BASE;
+const rawWpBase = urlParams.get("wpBase") || window.MN511_WP_BASE || (!isLocalHost ? window.location.origin : null);
 
 function normalizeApiBase(base) {
   if (!base) return base;
   return base.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
 }
 
+function normalizeWpBase(base) {
+  if (!base) return base;
+  return base.replace(/\/wp-json\/?$/i, "").replace(/\/+$/, "");
+}
+
 const API_BASE =
   normalizeApiBase(rawApiBase) ||
   (isLocalHost ? localApiBase : "https://511.mp.ls");
+const WP_BASE = normalizeWpBase(rawWpBase);
+const WP_API_BASE = WP_BASE ? `${WP_BASE}/wp-json/mn511/v1` : null;
+const WP_AUTH_STORAGE_KEY = "mn511WpAuth";
 const DEFAULT_CENTER = [44.9778, -93.265];
 const DEFAULT_ZOOM = 10;
 
@@ -66,6 +75,14 @@ let refreshInProgress = false;
 let refreshPending = false;
 const layerControllers = {};
 const layerCache = {};
+const layerMarkers = {};
+const featureIndex = new Map();
+let authState = {
+  token: null,
+  user: null,
+  favorites: []
+};
+const favoriteIds = new Set();
 
 // Helper functions
 function normalizeTimestamp(value) {
@@ -218,6 +235,475 @@ function getSeverityClass(severity) {
   return "low";
 }
 
+function getLayerInfo(layerId) {
+  const allLayers = Object.values(LAYER_CATEGORIES).flatMap(cat => cat.layers);
+  return allLayers.find(layer => layer.id === layerId) || null;
+}
+
+function normalizeFavoriteId(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_.:-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getFeatureId(feature, layerId) {
+  const p = feature?.properties || {};
+  const rawId = feature?.id || p.id || p.uri || p.uniqueId || p.cameraId;
+  let candidate = rawId;
+  if (!candidate && feature?.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)) {
+    candidate = feature.geometry.coordinates.join("-");
+  }
+  if (!candidate && p.title) {
+    candidate = p.title;
+  }
+  const baseId = normalizeFavoriteId(candidate || "unknown");
+  return normalizeFavoriteId(`${layerId}:${baseId || "unknown"}`);
+}
+
+function getFeatureTitle(feature) {
+  const p = feature?.properties || {};
+  return p.title || p.tooltip || p.road || "Location";
+}
+
+function getFeatureSubtitle(feature) {
+  const p = feature?.properties || {};
+  return [p.category, p.road, p.routeDesignator].filter(Boolean).join(" | ");
+}
+
+function getFeatureCoordinates(feature) {
+  if (!feature?.geometry || feature.geometry.type !== "Point") return null;
+  const coords = feature.geometry.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const [lon, lat] = coords;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return [lat, lon];
+}
+
+function buildFavoritePayload(feature, layerId) {
+  const favoriteId = feature?.properties?.favoriteId || getFeatureId(feature, layerId);
+  const updatedMs = extractUpdatedMs(feature);
+  const layer = getLayerInfo(layerId);
+  return {
+    id: favoriteId,
+    layerId,
+    title: getFeatureTitle(feature),
+    subtitle: getFeatureSubtitle(feature),
+    icon: layer ? layer.icon : "",
+    updatedAt: updatedMs ? new Date(updatedMs).toISOString() : "",
+    coordinates: getFeatureCoordinates(feature)
+  };
+}
+
+function rebuildFeatureIndex() {
+  featureIndex.clear();
+  allFeatures.forEach(feature => {
+    const layerId = feature.properties?.layerId || "unknown";
+    const favoriteId = feature.properties?.favoriteId || getFeatureId(feature, layerId);
+    if (!feature.properties) feature.properties = {};
+    feature.properties.favoriteId = favoriteId;
+    featureIndex.set(favoriteId, feature);
+  });
+}
+
+function setFavorites(favorites) {
+  authState.favorites = Array.isArray(favorites) ? favorites : [];
+  favoriteIds.clear();
+  authState.favorites.forEach(fav => {
+    if (fav && fav.id) favoriteIds.add(fav.id);
+  });
+  renderFavoritesList();
+  renderList();
+  syncFavoriteButtons();
+  updateFavoriteMarkers();
+}
+
+function syncFavoriteButtons() {
+  document.querySelectorAll("[data-favorite-id]").forEach((el) => {
+    const favoriteId = el.dataset.favoriteId;
+    if (!favoriteId) return;
+    const isFavorite = favoriteIds.has(favoriteId);
+    if (el.classList.contains("favorite-toggle")) {
+      el.classList.toggle("is-favorite", isFavorite);
+      const star = el.querySelector(".favorite-star");
+      const text = el.querySelector(".favorite-text");
+      if (star) star.textContent = isFavorite ? "★" : "☆";
+      if (text) text.textContent = isFavorite ? "Saved" : "Save";
+    }
+    if (el.classList.contains("panel-item-favorite")) {
+      el.classList.toggle("is-favorite", isFavorite);
+      el.textContent = isFavorite ? "★" : "☆";
+    }
+  });
+}
+
+function updateFavoriteMarkers() {
+  Object.values(layerMarkers).forEach((markers) => {
+    markers.forEach((marker, favoriteId) => {
+      const el = marker.getElement();
+      if (!el) return;
+      el.classList.toggle("is-favorite", favoriteIds.has(favoriteId));
+    });
+  });
+}
+
+function loadStoredAuth() {
+  if (!WP_API_BASE) return null;
+  try {
+    const raw = window.localStorage.getItem(WP_AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data && data.token) {
+      return data;
+    }
+  } catch (err) {
+    console.warn("Failed to load stored auth:", err);
+  }
+  return null;
+}
+
+function saveStoredAuth() {
+  if (!WP_API_BASE) return;
+  const payload = {
+    token: authState.token,
+    user: authState.user
+  };
+  window.localStorage.setItem(WP_AUTH_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function clearAuthState() {
+  authState.token = null;
+  authState.user = null;
+  authState.favorites = [];
+  if (WP_API_BASE) {
+    window.localStorage.removeItem(WP_AUTH_STORAGE_KEY);
+  }
+  updateAuthUI();
+  setFavorites([]);
+}
+
+function updateAuthUI() {
+  const loginBtn = document.getElementById("auth-login");
+  const logoutBtn = document.getElementById("auth-logout");
+  const userEl = document.getElementById("auth-user");
+  const userNameEl = document.getElementById("auth-user-name");
+  const favoritesAuth = document.getElementById("favorites-auth");
+  const favoritesLogin = document.getElementById("favorites-login");
+  const favoritesTitle = favoritesAuth?.querySelector(".favorites-auth-title");
+
+  if (!WP_API_BASE) {
+    if (loginBtn) {
+      loginBtn.textContent = "WP Offline";
+      loginBtn.disabled = true;
+    }
+    if (favoritesLogin) {
+      favoritesLogin.textContent = "Unavailable";
+      favoritesLogin.disabled = true;
+    }
+    if (favoritesTitle) {
+      favoritesTitle.textContent = "WordPress integration is not configured.";
+    }
+    if (favoritesAuth) favoritesAuth.classList.remove("hidden");
+    if (userEl) userEl.classList.add("hidden");
+    return;
+  }
+
+  if (authState.token) {
+    if (loginBtn) loginBtn.classList.add("hidden");
+    if (userEl) userEl.classList.remove("hidden");
+    if (userNameEl) {
+      const name = authState.user?.name || authState.user?.username || "Account";
+      userNameEl.textContent = name;
+    }
+    if (favoritesAuth) favoritesAuth.classList.add("hidden");
+  } else {
+    if (loginBtn) {
+      loginBtn.classList.remove("hidden");
+      loginBtn.disabled = false;
+      loginBtn.textContent = "Sign In";
+    }
+    if (userEl) userEl.classList.add("hidden");
+    if (favoritesAuth) favoritesAuth.classList.remove("hidden");
+    if (favoritesTitle) favoritesTitle.textContent = "Sign in to save and sync favorites.";
+  }
+
+  if (logoutBtn) logoutBtn.disabled = !authState.token;
+}
+
+async function wpFetch(path, { method = "GET", body = null, auth = true } = {}) {
+  if (!WP_API_BASE) {
+    throw new Error("WordPress integration is not configured.");
+  }
+  const headers = { "Content-Type": "application/json" };
+  if (auth && authState.token) {
+    headers.Authorization = `Bearer ${authState.token}`;
+  }
+  const res = await fetch(`${WP_API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : null
+  });
+  return res;
+}
+
+async function loginWithCredentials(username, password) {
+  const res = await wpFetch("/login", {
+    method: "POST",
+    body: { username, password },
+    auth: false
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = data?.message || "Login failed.";
+    throw new Error(message);
+  }
+  if (!data.token) {
+    throw new Error("Login failed.");
+  }
+  authState.token = data.token;
+  authState.user = data.user;
+  saveStoredAuth();
+  updateAuthUI();
+  await refreshFavorites();
+}
+
+async function refreshFavorites() {
+  if (!authState.token) {
+    setFavorites([]);
+    return;
+  }
+  try {
+    const res = await wpFetch("/favorites");
+    if (res.status === 401 || res.status === 403) {
+      clearAuthState();
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    const favorites = Array.isArray(data) ? data : data.favorites;
+    setFavorites(favorites || []);
+  } catch (err) {
+    console.warn("Failed to load favorites:", err);
+  }
+}
+
+async function logout() {
+  if (authState.token) {
+    try {
+      await wpFetch("/logout", { method: "POST" });
+    } catch (err) {
+      console.warn("Logout failed:", err);
+    }
+  }
+  clearAuthState();
+}
+
+async function addFavorite(favorite) {
+  const res = await wpFetch("/favorites", {
+    method: "POST",
+    body: { favorite }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) {
+    clearAuthState();
+    throw new Error("Session expired. Please sign in again.");
+  }
+  if (!res.ok) {
+    const message = data?.message || "Failed to save favorite.";
+    throw new Error(message);
+  }
+  setFavorites(data.favorites || []);
+}
+
+async function removeFavorite(favoriteId) {
+  const res = await wpFetch(`/favorites/${favoriteId}`, {
+    method: "DELETE"
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) {
+    clearAuthState();
+    throw new Error("Session expired. Please sign in again.");
+  }
+  if (!res.ok) {
+    const message = data?.message || "Failed to remove favorite.";
+    throw new Error(message);
+  }
+  setFavorites(data.favorites || []);
+}
+
+async function toggleFavorite(favoriteId) {
+  if (!favoriteId) return;
+  if (!WP_API_BASE) {
+    alert("WordPress integration is not configured.");
+    return;
+  }
+  if (!authState.token) {
+    showAuthModal();
+    return;
+  }
+  if (favoriteIds.has(favoriteId)) {
+    await removeFavorite(favoriteId);
+    return;
+  }
+  const feature = featureIndex.get(favoriteId);
+  if (!feature) return;
+  const layerId = feature.properties?.layerId || "unknown";
+  const favorite = buildFavoritePayload(feature, layerId);
+  await addFavorite(favorite);
+}
+
+function renderFavoritesList() {
+  const listEl = document.getElementById("favorites-list");
+  const countEl = document.getElementById("favorites-count");
+  if (!listEl || !countEl) return;
+
+  if (!authState.token) {
+    listEl.innerHTML = "";
+    countEl.textContent = "0";
+    return;
+  }
+
+  const favorites = authState.favorites || [];
+  countEl.textContent = String(favorites.length);
+  listEl.innerHTML = "";
+
+  if (!favorites.length) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">☆</div>
+        <div class="empty-state-text">No favorites yet</div>
+      </div>
+    `;
+    return;
+  }
+
+  favorites.forEach((favorite) => {
+    const layerInfo = getLayerInfo(favorite.layerId);
+    const title = favorite.title || "Favorite";
+    const subtitle = favorite.subtitle || (layerInfo ? layerInfo.label : favorite.layerId);
+    const icon = favorite.icon || layerInfo?.icon || "★";
+    const updatedAt = favorite.updatedAt ? new Date(favorite.updatedAt).toLocaleString() : "";
+
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "panel-item";
+    item.dataset.favoriteId = favorite.id;
+    item.innerHTML = `
+      <div class="panel-item-title">${icon} ${title}</div>
+      ${subtitle ? `<div class="panel-item-meta">${subtitle}</div>` : ""}
+      ${updatedAt ? `<div class="panel-item-time">${updatedAt}</div>` : ""}
+      <span role="button" class="panel-item-favorite is-favorite" data-favorite-id="${escapeAttr(favorite.id)}" title="Remove favorite" tabindex="0">★</span>
+    `;
+
+    item.addEventListener("click", () => {
+      const feature = featureIndex.get(favorite.id);
+      if (feature) {
+        focusOnFeature(feature);
+        return;
+      }
+      if (Array.isArray(favorite.coordinates) && favorite.coordinates.length === 2) {
+        map.setView([favorite.coordinates[0], favorite.coordinates[1]], Math.max(map.getZoom(), 13), { animate: true });
+      }
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+function ensureAuthModal() {
+  if (document.getElementById("auth-modal")) return;
+
+  const modal = document.createElement("div");
+  modal.id = "auth-modal";
+  modal.className = "auth-modal hidden";
+  modal.innerHTML = `
+    <div class="auth-modal-backdrop" data-auth-close="true"></div>
+    <div class="auth-modal-dialog" role="dialog" aria-modal="true">
+      <div class="auth-modal-header">
+        <div class="auth-modal-title">Sign in to WordPress</div>
+        <button type="button" class="auth-modal-close" data-auth-close="true">x</button>
+      </div>
+      <form class="auth-modal-body" id="auth-form">
+        <label class="auth-field">
+          <span>Username or Email</span>
+          <input type="text" name="username" autocomplete="username" required />
+        </label>
+        <label class="auth-field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <div class="auth-modal-actions">
+          <button type="submit" class="auth-btn">Sign In</button>
+          <button type="button" class="auth-btn secondary" data-auth-close="true">Cancel</button>
+        </div>
+        <div class="auth-modal-error hidden" id="auth-modal-error"></div>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.addEventListener("click", (event) => {
+    if (event.target?.dataset?.authClose) {
+      hideAuthModal();
+    }
+  });
+
+  const form = modal.querySelector("#auth-form");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const username = String(formData.get("username") || "").trim();
+    const password = String(formData.get("password") || "");
+    const errorEl = modal.querySelector("#auth-modal-error");
+    if (errorEl) {
+      errorEl.textContent = "";
+      errorEl.classList.add("hidden");
+    }
+
+    if (!username || !password) {
+      if (errorEl) {
+        errorEl.textContent = "Username and password are required.";
+        errorEl.classList.remove("hidden");
+      }
+      return;
+    }
+
+    try {
+      await loginWithCredentials(username, password);
+      form.reset();
+      hideAuthModal();
+    } catch (err) {
+      if (errorEl) {
+        errorEl.textContent = err.message || "Login failed.";
+        errorEl.classList.remove("hidden");
+      }
+    }
+  });
+}
+
+function showAuthModal() {
+  ensureAuthModal();
+  const modal = document.getElementById("auth-modal");
+  if (modal) modal.classList.remove("hidden");
+}
+
+function hideAuthModal() {
+  const modal = document.getElementById("auth-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function initAuth() {
+  updateAuthUI();
+  if (!WP_API_BASE) return;
+  const stored = loadStoredAuth();
+  if (stored) {
+    authState.token = stored.token;
+    authState.user = stored.user;
+    updateAuthUI();
+    await refreshFavorites();
+  }
+}
+
 // Popup builders
 function buildTrafficPopup(feature) {
   const p = feature.properties || {};
@@ -341,7 +827,8 @@ function buildCameraPopup(feature) {
   const updatedText = formatTimestamp(updatedMs);
   const views = Array.isArray(p.cameraViews) ? p.cameraViews : [];
 
-  const items = views.slice(0, 4).map((view, idx) => {
+  const mediaItems = [];
+  const viewItems = views.map((view) => {
     const sources = Array.isArray(view.sources) ? view.sources : [];
     const sourceUrls = sources.map((s) => s && s.src).filter(Boolean);
 
@@ -367,16 +854,32 @@ function buildCameraPopup(feature) {
     const link = view.url || sourceUrls[0] || imageSrc || videoSrc || null;
     const title = view.title || view.category || "Camera View";
     const isHls = typeof videoSrc === "string" && /\.m3u8(\?|$)/i.test(videoSrc);
+    let mediaIndex = -1;
 
-    const dataAttrs = [
+    if (imageSrc || videoSrc || link) {
+      mediaIndex = mediaItems.length;
+      mediaItems.push({ title, videoSrc, imageSrc, link });
+    }
+
+    return { title, imageSrc, videoSrc, link, isHls, mediaIndex };
+  });
+
+  const mediaPayload = mediaItems.length ? encodeURIComponent(JSON.stringify(mediaItems)) : "";
+
+  const items = viewItems.slice(0, 4).map((item) => {
+    const { title, imageSrc, videoSrc, link, isHls, mediaIndex } = item;
+
+    const dataAttrs = mediaIndex >= 0 ? [
       `data-title="${escapeAttr(title)}"`,
       `data-video="${escapeAttr(videoSrc || "")}"`,
       `data-image="${escapeAttr(imageSrc || "")}"`,
-      `data-link="${escapeAttr(link || "")}"`
-    ].join(" ");
+      `data-link="${escapeAttr(link || "")}"`,
+      mediaPayload ? `data-media="${escapeAttr(mediaPayload)}"` : "",
+      `data-index="${mediaIndex}"`
+    ].filter(Boolean).join(" ") : "";
 
     let mediaHtml = "";
-    if (imageSrc) {
+    if (imageSrc && mediaIndex >= 0) {
       // Show image with click to open modal
       mediaHtml = `
         <button class="camera-modal-trigger" type="button" ${dataAttrs}>
@@ -386,14 +889,14 @@ function buildCameraPopup(feature) {
           </div>
         </button>
       `;
-    } else if (videoSrc) {
+    } else if (videoSrc && mediaIndex >= 0) {
       // Video without image - show play button
       mediaHtml = `
         <button class="camera-modal-trigger popup-media-placeholder" type="button" ${dataAttrs}>
           ▶ Play ${isHls ? 'Live Stream' : 'Video'}
         </button>
       `;
-    } else if (link) {
+    } else if (link && mediaIndex >= 0) {
       mediaHtml = `
         <button class="camera-modal-trigger popup-media-placeholder" type="button" ${dataAttrs}>
           View Camera
@@ -495,11 +998,31 @@ function buildHoverContent(feature, layerId) {
 }
 
 function getPopupContent(feature, layerId) {
-  if (layerId === "weather-stations") return buildWeatherStationPopup(feature);
-  if (layerId === "signs") return buildSignPopup(feature);
-  if (layerId === "cameras") return buildCameraPopup(feature);
-  if (["incidents", "closures", "construction"].includes(layerId)) return buildTrafficPopup(feature);
-  return buildDefaultPopup(feature);
+  let content = "";
+  if (layerId === "weather-stations") content = buildWeatherStationPopup(feature);
+  else if (layerId === "signs") content = buildSignPopup(feature);
+  else if (layerId === "cameras") content = buildCameraPopup(feature);
+  else if (["incidents", "closures", "construction"].includes(layerId)) content = buildTrafficPopup(feature);
+  else content = buildDefaultPopup(feature);
+
+  return appendPopupActions(content, feature, layerId);
+}
+
+function appendPopupActions(content, feature, layerId) {
+  const favoriteId = feature?.properties?.favoriteId || getFeatureId(feature, layerId);
+  if (!feature.properties) feature.properties = {};
+  feature.properties.favoriteId = favoriteId;
+  const isFavorite = favoriteIds.has(favoriteId);
+  const buttonHtml = `
+    <div class="popup-actions">
+      <button type="button" class="favorite-toggle ${isFavorite ? "is-favorite" : ""}" data-favorite-id="${escapeAttr(favoriteId)}">
+        <span class="favorite-star">${isFavorite ? "★" : "☆"}</span>
+        <span class="favorite-text">${isFavorite ? "Saved" : "Save"}</span>
+      </button>
+    </div>
+  `;
+
+  return content.replace(/<\/div>\s*$/, `${buttonHtml}</div>`);
 }
 
 // Layer rendering
@@ -513,6 +1036,8 @@ function addGeoJsonLayer(layerId, geojson) {
   const allLayers = Object.values(LAYER_CATEGORIES).flatMap(cat => cat.layers);
   const layerConfig = allLayers.find(l => l.id === layerId);
   const color = layerConfig ? layerConfig.color : "#0066cc";
+  const markersForLayer = new Map();
+  layerMarkers[layerId] = markersForLayer;
 
   // Create marker cluster group with custom options
   const clusterGroup = L.markerClusterGroup({
@@ -538,15 +1063,23 @@ function addGeoJsonLayer(layerId, geojson) {
   const geoJsonLayer = L.geoJSON(geojson, {
     pointToLayer: (feature, latlng) => {
       const icon = getMarkerIcon(layerId);
-      const markerHtml = `<div style="font-size: 24px; line-height: 1; text-shadow: 0 0 3px white;">${icon}</div>`;
-      return L.marker(latlng, {
+      const favoriteId = feature?.properties?.favoriteId || getFeatureId(feature, layerId);
+      if (!feature.properties) feature.properties = {};
+      feature.properties.favoriteId = favoriteId;
+      const markerHtml = `
+        <div style="font-size: 24px; line-height: 1; text-shadow: 0 0 3px white;">${icon}</div>
+        <div class="marker-favorite">★</div>
+      `;
+      const marker = L.marker(latlng, {
         icon: L.divIcon({
           html: markerHtml,
-          className: "custom-marker",
+          className: `custom-marker${favoriteIds.has(favoriteId) ? " is-favorite" : ""}`,
           iconSize: [24, 24],
           iconAnchor: [12, 12]
         })
       });
+      markersForLayer.set(favoriteId, marker);
+      return marker;
     },
     style: () => ({ color, weight: 3, opacity: 0.7 }),
     onEachFeature: (feature, layer) => {
@@ -556,7 +1089,15 @@ function addGeoJsonLayer(layerId, geojson) {
       // Use larger popup for cameras to accommodate videos
       const popupMaxWidth = (layerId === 'cameras') ? 500 : 300;
 
-      layer.bindPopup(popupContent, { maxWidth: popupMaxWidth });
+      layer.bindPopup(popupContent, {
+        maxWidth: popupMaxWidth,
+        closeOnClick: false,
+        autoClose: true,
+        closeButton: true
+      });
+      layer.on("popupopen", () => {
+        layer.setPopupContent(getPopupContent(feature, layerId));
+      });
       layer.bindTooltip(hoverContent, {
         sticky: true,
         direction: "top",
@@ -568,6 +1109,15 @@ function addGeoJsonLayer(layerId, geojson) {
 
   // Add all markers to the cluster group
   clusterGroup.addLayer(geoJsonLayer);
+  clusterGroup.on("layeradd", (event) => {
+    const marker = event.layer;
+    const favoriteId = marker?.feature?.properties?.favoriteId;
+    if (!favoriteId || !marker.getElement) return;
+    const el = marker.getElement();
+    if (el) {
+      el.classList.toggle("is-favorite", favoriteIds.has(favoriteId));
+    }
+  });
 
   if (layerGroups[layerId]) {
     map.removeLayer(layerGroups[layerId]);
@@ -590,7 +1140,11 @@ async function loadLayer(layerId, bbox) {
     }
     const controller = new AbortController();
     layerControllers[layerId] = controller;
-    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    const res = await fetch(url, { cache: "no-cache", signal: controller.signal });
+    if (res.status === 304) {
+      const cached = getCachedLayer(layerId, bbox);
+      return cached || { features: [] };
+    }
     if (!res.ok) {
       console.error(`Failed to load ${layerId}: ${res.status}`);
       return { features: [] };
@@ -710,6 +1264,8 @@ function renderList() {
     const title = p.title || "Alert";
     const updatedMs = extractUpdatedMs(feature);
     const updatedText = formatRelativeTime(updatedMs);
+    const layerId = p.layerId || "unknown";
+    const favoriteId = p.favoriteId || getFeatureId(feature, layerId);
 
     const meta = [p.category, p.road, p.routeDesignator].filter(Boolean).join(" • ");
 
@@ -727,6 +1283,7 @@ function renderList() {
       <div class="panel-item-time">${updatedText}</div>
       ${severity !== null && severity >= 3 ? `<span class="panel-badge high">High</span>` : ""}
       ${severity !== null && severity === 2 ? `<span class="panel-badge medium">Medium</span>` : ""}
+      <span role="button" class="panel-item-favorite ${favoriteIds.has(favoriteId) ? "is-favorite" : ""}" data-favorite-id="${escapeAttr(favoriteId)}" title="Save favorite" tabindex="0">${favoriteIds.has(favoriteId) ? "★" : "☆"}</span>
     `;
 
     item.addEventListener("click", () => focusOnFeature(feature));
@@ -782,6 +1339,9 @@ async function handleLayerToggle(event) {
       map.removeLayer(layerGroups[layerId]);
       delete layerGroups[layerId];
     }
+    if (layerMarkers[layerId]) {
+      delete layerMarkers[layerId];
+    }
     // Remove from allFeatures
     allFeatures = allFeatures.filter(f => f.properties?.layerId !== layerId);
     renderList();
@@ -794,6 +1354,7 @@ function renderLayer(layerId, geojson) {
     geojson.features.forEach(f => {
       if (!f.properties) f.properties = {};
       f.properties.layerId = layerId;
+      f.properties.favoriteId = f.properties.favoriteId || getFeatureId(f, layerId);
     });
 
     // Merge new features with existing ones (prevent disappearing)
@@ -825,7 +1386,9 @@ function renderLayer(layerId, geojson) {
     // Update allFeatures
     allFeatures = allFeatures.filter(f => f.properties?.layerId !== layerId);
     allFeatures.push(...mergedGeojson.features);
+    rebuildFeatureIndex();
     renderList();
+    renderFavoritesList();
     return true;
   }
 
@@ -834,7 +1397,9 @@ function renderLayer(layerId, geojson) {
     delete layerGroups[layerId];
   }
   allFeatures = allFeatures.filter(f => f.properties?.layerId !== layerId);
+  rebuildFeatureIndex();
   renderList();
+  renderFavoritesList();
   return false;
 }
 
@@ -863,10 +1428,12 @@ async function refreshAllLayers() {
     if (!enabledIds.has(layerId)) {
       map.removeLayer(layerGroups[layerId]);
       delete layerGroups[layerId];
+      if (layerMarkers[layerId]) delete layerMarkers[layerId];
     }
   });
 
   allFeatures = [];
+  rebuildFeatureIndex();
 
   enabledLayers.forEach(layer => {
     const cached = getCachedLayer(layer.id, bbox);
@@ -977,7 +1544,14 @@ function ensureCameraModal() {
         <div class="camera-modal-title"></div>
         <button class="camera-modal-close" type="button" data-close="true">×</button>
       </div>
-      <div class="camera-modal-body"></div>
+      <div class="camera-modal-body">
+        <button class="camera-modal-nav prev" type="button" data-nav="prev" aria-label="Previous media">‹</button>
+        <div class="camera-modal-stage"></div>
+        <button class="camera-modal-nav next" type="button" data-nav="next" aria-label="Next media">›</button>
+      </div>
+      <div class="camera-modal-footer">
+        <div class="camera-modal-counter"></div>
+      </div>
     </div>
   `;
   document.body.appendChild(modal);
@@ -986,25 +1560,41 @@ function ensureCameraModal() {
     if (event.target && event.target.dataset && event.target.dataset.close) {
       hideCameraModal();
     }
+    if (event.target && event.target.dataset && event.target.dataset.nav) {
+      const direction = event.target.dataset.nav;
+      if (direction === "prev") setCameraModalIndex(cameraModalIndex - 1);
+      if (direction === "next") setCameraModalIndex(cameraModalIndex + 1);
+    }
   });
 }
 
 let currentHls = null;
+let cameraModalItems = [];
+let cameraModalIndex = 0;
 
-function showCameraModal({ title, videoSrc, imageSrc, link }) {
-  ensureCameraModal();
+function renderCameraModalMedia() {
   const modal = document.getElementById("camera-modal");
-  const titleEl = modal.querySelector(".camera-modal-title");
-  const bodyEl = modal.querySelector(".camera-modal-body");
+  if (!modal) return;
 
-  titleEl.textContent = title || "Camera View";
-  bodyEl.innerHTML = "";
+  const titleEl = modal.querySelector(".camera-modal-title");
+  const stageEl = modal.querySelector(".camera-modal-stage");
+  const counterEl = modal.querySelector(".camera-modal-counter");
+  const prevBtn = modal.querySelector(".camera-modal-nav.prev");
+  const nextBtn = modal.querySelector(".camera-modal-nav.next");
+
+  const current = cameraModalItems[cameraModalIndex];
+  if (!current) return;
+
+  titleEl.textContent = current.title || "Camera View";
+  stageEl.innerHTML = "";
 
   // Clean up any existing HLS instance
   if (currentHls) {
     currentHls.destroy();
     currentHls = null;
   }
+
+  const { videoSrc, imageSrc, link, title } = current;
 
   // HLS stream (.m3u8)
   if (videoSrc && /\.m3u8(\?|$)/i.test(videoSrc)) {
@@ -1014,7 +1604,7 @@ function showCameraModal({ title, videoSrc, imageSrc, link }) {
     video.autoplay = true;
     video.muted = false;
     video.playsInline = true;
-    bodyEl.appendChild(video);
+    stageEl.appendChild(video);
 
     // Use HLS.js if supported, otherwise try native HLS support (Safari)
     if (Hls.isSupported()) {
@@ -1045,7 +1635,7 @@ function showCameraModal({ title, videoSrc, imageSrc, link }) {
             default:
               console.log('Fatal error, destroying HLS...');
               hls.destroy();
-              bodyEl.innerHTML = '<div class="camera-modal-empty">Failed to load video stream</div>';
+              stageEl.innerHTML = '<div class="camera-modal-empty">Failed to load video stream</div>';
               break;
           }
         }
@@ -1060,7 +1650,7 @@ function showCameraModal({ title, videoSrc, imageSrc, link }) {
         });
       });
     } else {
-      bodyEl.innerHTML = `
+      stageEl.innerHTML = `
         <div class="camera-modal-empty">
           HLS streaming not supported in this browser.
           <a href="${videoSrc}" target="_blank" rel="noopener" class="camera-modal-link" style="margin-top: 12px;">Open stream directly</a>
@@ -1076,7 +1666,7 @@ function showCameraModal({ title, videoSrc, imageSrc, link }) {
     video.autoplay = true;
     video.preload = "metadata";
     video.src = videoSrc;
-    bodyEl.appendChild(video);
+    stageEl.appendChild(video);
   }
   // Show image
   else if (imageSrc) {
@@ -1084,7 +1674,7 @@ function showCameraModal({ title, videoSrc, imageSrc, link }) {
     img.className = "camera-modal-media";
     img.src = imageSrc;
     img.alt = title || "Camera view";
-    bodyEl.appendChild(img);
+    stageEl.appendChild(img);
   }
   // Fallback to link
   else if (link) {
@@ -1094,16 +1684,45 @@ function showCameraModal({ title, videoSrc, imageSrc, link }) {
     linkEl.target = "_blank";
     linkEl.rel = "noopener";
     linkEl.textContent = "Open camera view";
-    bodyEl.appendChild(linkEl);
+    stageEl.appendChild(linkEl);
   }
   // No media
   else {
     const empty = document.createElement("div");
     empty.className = "camera-modal-empty";
     empty.textContent = "No media available.";
-    bodyEl.appendChild(empty);
+    stageEl.appendChild(empty);
   }
 
+  if (counterEl) {
+    counterEl.textContent = cameraModalItems.length > 1
+      ? `${cameraModalIndex + 1} of ${cameraModalItems.length}`
+      : "";
+  }
+  if (prevBtn) prevBtn.disabled = cameraModalItems.length < 2;
+  if (nextBtn) nextBtn.disabled = cameraModalItems.length < 2;
+}
+
+function setCameraModalIndex(nextIndex) {
+  if (!cameraModalItems.length) return;
+  const total = cameraModalItems.length;
+  cameraModalIndex = ((nextIndex % total) + total) % total;
+  renderCameraModalMedia();
+}
+
+function showCameraModal({ title, videoSrc, imageSrc, link, items, index }) {
+  ensureCameraModal();
+  const modal = document.getElementById("camera-modal");
+
+  if (Array.isArray(items) && items.length) {
+    cameraModalItems = items;
+    cameraModalIndex = Number.isFinite(index) ? Math.min(Math.max(index, 0), items.length - 1) : 0;
+  } else {
+    cameraModalItems = [{ title, videoSrc, imageSrc, link }];
+    cameraModalIndex = 0;
+  }
+
+  renderCameraModalMedia();
   modal.classList.remove("hidden");
 }
 
@@ -1111,6 +1730,8 @@ function hideCameraModal() {
   const modal = document.getElementById("camera-modal");
   if (!modal) return;
   modal.classList.add("hidden");
+  cameraModalItems = [];
+  cameraModalIndex = 0;
 
   // Clean up video
   const video = modal.querySelector("video");
@@ -1128,15 +1749,70 @@ function hideCameraModal() {
 }
 
 document.addEventListener("click", (event) => {
+  const favoriteBtn = event.target.closest(".favorite-toggle, .panel-item-favorite");
+  if (!favoriteBtn) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const favoriteId = favoriteBtn.dataset.favoriteId;
+  toggleFavorite(favoriteId).catch(err => {
+    console.warn("Favorite toggle failed:", err);
+    alert(err.message || "Unable to update favorite.");
+  });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const favoriteBtn = event.target.closest(".panel-item-favorite");
+  if (!favoriteBtn) return;
+  event.preventDefault();
+  const favoriteId = favoriteBtn.dataset.favoriteId;
+  toggleFavorite(favoriteId).catch(err => {
+    console.warn("Favorite toggle failed:", err);
+    alert(err.message || "Unable to update favorite.");
+  });
+});
+
+document.addEventListener("click", (event) => {
   const trigger = event.target.closest(".camera-modal-trigger");
   if (!trigger) return;
   event.preventDefault();
+
+  const mediaRaw = trigger.dataset.media || "";
+  if (mediaRaw) {
+    try {
+      const items = JSON.parse(decodeURIComponent(mediaRaw));
+      if (Array.isArray(items) && items.length) {
+        const idx = Number(trigger.dataset.index);
+        showCameraModal({ items, index: Number.isFinite(idx) ? idx : 0 });
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to parse camera media list:", err);
+    }
+  }
+
   showCameraModal({
     title: trigger.dataset.title || "",
     videoSrc: trigger.dataset.video || "",
     imageSrc: trigger.dataset.image || "",
     link: trigger.dataset.link || ""
   });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const authModal = document.getElementById("auth-modal");
+  if (authModal && !authModal.classList.contains("hidden")) {
+    hideAuthModal();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  const modal = document.getElementById("camera-modal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  if (event.key === "ArrowLeft") setCameraModalIndex(cameraModalIndex - 1);
+  if (event.key === "ArrowRight") setCameraModalIndex(cameraModalIndex + 1);
+  if (event.key === "Escape") hideCameraModal();
 });
 
 // Map controls
@@ -1181,6 +1857,14 @@ map.on("moveend", () => {
   refreshTimer = setTimeout(() => {
     refreshAllLayers();
   }, 500);
+});
+
+map.on("click", (event) => {
+  const target = event.originalEvent && event.originalEvent.target;
+  if (target && (target.closest(".leaflet-popup") || target.closest(".leaflet-marker-icon") || target.closest(".marker-cluster"))) {
+    return;
+  }
+  map.closePopup();
 });
 
 // Panel resize functionality
@@ -1268,6 +1952,17 @@ async function init() {
   setupFilterChips();
   setupMapControls();
   setupPanelResize();
+  updateAuthUI();
+
+  const loginBtn = document.getElementById("auth-login");
+  const favoritesLogin = document.getElementById("favorites-login");
+  const logoutBtn = document.getElementById("auth-logout");
+
+  if (loginBtn) loginBtn.addEventListener("click", showAuthModal);
+  if (favoritesLogin) favoritesLogin.addEventListener("click", showAuthModal);
+  if (logoutBtn) logoutBtn.addEventListener("click", () => logout());
+
+  await initAuth();
 
   await preloadAllLayers();
 

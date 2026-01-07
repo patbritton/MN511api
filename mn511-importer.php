@@ -20,6 +20,10 @@ define('MN511_ALERT_UID_META', '_mn511_uid');
 define('MN511_ALERT_UPDATED_META', '_mn511_updated_at');
 define('MN511_ALERT_FETCHED_META', '_mn511_fetched_at');
 define('MN511_ALERT_RAW_META', '_mn511_raw');
+define('MN511_FAVORITES_META', '_mn511_favorites');
+define('MN511_AUTH_TOKEN_META', '_mn511_auth_token_hash');
+define('MN511_AUTH_TOKEN_EXPIRES_META', '_mn511_auth_token_expires');
+define('MN511_AUTH_TOKEN_TTL', 30 * DAY_IN_SECONDS);
 
 function mn511_register_post_type() {
     register_post_type(MN511_ALERT_POST_TYPE, array(
@@ -295,3 +299,259 @@ function mn511_shortcode($atts) {
     return $out;
 }
 add_shortcode('mn511_alerts', 'mn511_shortcode');
+
+function mn511_get_authorization_header() {
+    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+        return $_SERVER['HTTP_AUTHORIZATION'];
+    }
+    if (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        return $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+    return '';
+}
+
+function mn511_get_bearer_token() {
+    $header = mn511_get_authorization_header();
+    if (!$header) {
+        return null;
+    }
+    if (preg_match('/Bearer\s+(.+)/i', $header, $matches)) {
+        return trim($matches[1]);
+    }
+    return null;
+}
+
+function mn511_get_user_by_token($token) {
+    if (empty($token)) {
+        return null;
+    }
+    $hash = hash('sha256', $token);
+    $users = get_users(array(
+        'meta_key' => MN511_AUTH_TOKEN_META,
+        'meta_value' => $hash,
+        'number' => 1,
+        'fields' => 'all',
+    ));
+
+    if (empty($users)) {
+        return null;
+    }
+
+    $user = $users[0];
+    $expires = get_user_meta($user->ID, MN511_AUTH_TOKEN_EXPIRES_META, true);
+    if ($expires && is_numeric($expires) && (int) $expires < time()) {
+        delete_user_meta($user->ID, MN511_AUTH_TOKEN_META);
+        delete_user_meta($user->ID, MN511_AUTH_TOKEN_EXPIRES_META);
+        return null;
+    }
+
+    return $user;
+}
+
+function mn511_require_auth($request) {
+    $token = mn511_get_bearer_token();
+    if (!$token) {
+        return new WP_Error('mn511_auth_required', 'Authentication required.', array('status' => 401));
+    }
+
+    $user = mn511_get_user_by_token($token);
+    if (!$user) {
+        return new WP_Error('mn511_auth_invalid', 'Invalid or expired token.', array('status' => 403));
+    }
+
+    wp_set_current_user($user->ID);
+    return true;
+}
+
+function mn511_sanitize_favorite($favorite) {
+    if (!is_array($favorite)) {
+        return null;
+    }
+
+    $id = sanitize_text_field($favorite['id'] ?? '');
+    if (empty($id)) {
+        return null;
+    }
+
+    $coords = null;
+    if (!empty($favorite['coordinates']) && is_array($favorite['coordinates']) && count($favorite['coordinates']) === 2) {
+        $lat = floatval($favorite['coordinates'][0]);
+        $lon = floatval($favorite['coordinates'][1]);
+        if (is_finite($lat) && is_finite($lon)) {
+            $coords = array($lat, $lon);
+        }
+    }
+
+    return array(
+        'id' => $id,
+        'layerId' => sanitize_text_field($favorite['layerId'] ?? ''),
+        'title' => sanitize_text_field($favorite['title'] ?? 'Favorite'),
+        'subtitle' => sanitize_text_field($favorite['subtitle'] ?? ''),
+        'icon' => sanitize_text_field($favorite['icon'] ?? ''),
+        'updatedAt' => sanitize_text_field($favorite['updatedAt'] ?? ''),
+        'coordinates' => $coords,
+        'createdAt' => sanitize_text_field($favorite['createdAt'] ?? ''),
+    );
+}
+
+function mn511_get_favorites_for_user($user_id) {
+    $favorites = get_user_meta($user_id, MN511_FAVORITES_META, true);
+    if (!is_array($favorites)) {
+        return array();
+    }
+    return array_values(array_filter($favorites));
+}
+
+function mn511_save_favorites_for_user($user_id, $favorites) {
+    update_user_meta($user_id, MN511_FAVORITES_META, array_values($favorites));
+}
+
+function mn511_rest_login($request) {
+    $username = $request->get_param('username');
+    $password = $request->get_param('password');
+
+    if (empty($username) || empty($password)) {
+        return new WP_Error('mn511_login_missing', 'Username and password are required.', array('status' => 400));
+    }
+
+    $user = wp_authenticate($username, $password);
+    if (is_wp_error($user)) {
+        return new WP_Error('mn511_login_failed', 'Invalid credentials.', array('status' => 403));
+    }
+
+    $token = wp_generate_password(48, false, false);
+    $hash = hash('sha256', $token);
+
+    update_user_meta($user->ID, MN511_AUTH_TOKEN_META, $hash);
+    update_user_meta($user->ID, MN511_AUTH_TOKEN_EXPIRES_META, time() + MN511_AUTH_TOKEN_TTL);
+
+    return array(
+        'token' => $token,
+        'user' => array(
+            'id' => $user->ID,
+            'name' => $user->display_name,
+            'username' => $user->user_login,
+            'email' => $user->user_email,
+        ),
+    );
+}
+
+function mn511_rest_logout($request) {
+    $token = mn511_get_bearer_token();
+    if (!$token) {
+        return new WP_Error('mn511_auth_required', 'Authentication required.', array('status' => 401));
+    }
+
+    $user = mn511_get_user_by_token($token);
+    if (!$user) {
+        return new WP_Error('mn511_auth_invalid', 'Invalid token.', array('status' => 403));
+    }
+
+    delete_user_meta($user->ID, MN511_AUTH_TOKEN_META);
+    delete_user_meta($user->ID, MN511_AUTH_TOKEN_EXPIRES_META);
+
+    return array('ok' => true);
+}
+
+function mn511_rest_get_favorites($request) {
+    $user = wp_get_current_user();
+    $favorites = mn511_get_favorites_for_user($user->ID);
+    return array('favorites' => $favorites);
+}
+
+function mn511_rest_add_favorite($request) {
+    $user = wp_get_current_user();
+    $payload = $request->get_json_params();
+    $favorite = mn511_sanitize_favorite($payload['favorite'] ?? null);
+    if (!$favorite) {
+        return new WP_Error('mn511_favorite_invalid', 'Favorite payload is invalid.', array('status' => 400));
+    }
+
+    if (empty($favorite['createdAt'])) {
+        $favorite['createdAt'] = gmdate('c');
+    }
+
+    $favorites = mn511_get_favorites_for_user($user->ID);
+    $updated = false;
+    foreach ($favorites as $index => $existing) {
+        if (!empty($existing['id']) && $existing['id'] === $favorite['id']) {
+            $favorites[$index] = array_merge($existing, $favorite);
+            $updated = true;
+            break;
+        }
+    }
+    if (!$updated) {
+        $favorites[] = $favorite;
+    }
+
+    mn511_save_favorites_for_user($user->ID, $favorites);
+    return array('favorites' => $favorites, 'favorite' => $favorite);
+}
+
+function mn511_rest_remove_favorite($request) {
+    $user = wp_get_current_user();
+    $id = sanitize_text_field($request['id'] ?? '');
+    if (empty($id)) {
+        return new WP_Error('mn511_favorite_missing', 'Favorite id is required.', array('status' => 400));
+    }
+
+    $favorites = mn511_get_favorites_for_user($user->ID);
+    $favorites = array_values(array_filter($favorites, function ($fav) use ($id) {
+        return isset($fav['id']) && $fav['id'] !== $id;
+    }));
+
+    mn511_save_favorites_for_user($user->ID, $favorites);
+    return array('favorites' => $favorites);
+}
+
+function mn511_rest_cors_headers($served, $result, $request, $server) {
+    $route = $request->get_route();
+    if (strpos($route, '/mn511/v1/') === false) {
+        return $served;
+    }
+
+    $origin = get_http_origin();
+    if ($origin) {
+        header('Access-Control-Allow-Origin: ' . esc_url_raw($origin));
+        header('Access-Control-Allow-Credentials: true');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type');
+        header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
+    }
+
+    return $served;
+}
+add_filter('rest_pre_serve_request', 'mn511_rest_cors_headers', 10, 4);
+
+function mn511_register_rest_routes() {
+    register_rest_route('mn511/v1', '/login', array(
+        'methods' => 'POST',
+        'callback' => 'mn511_rest_login',
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route('mn511/v1', '/logout', array(
+        'methods' => 'POST',
+        'callback' => 'mn511_rest_logout',
+        'permission_callback' => 'mn511_require_auth',
+    ));
+
+    register_rest_route('mn511/v1', '/favorites', array(
+        array(
+            'methods' => 'GET',
+            'callback' => 'mn511_rest_get_favorites',
+            'permission_callback' => 'mn511_require_auth',
+        ),
+        array(
+            'methods' => 'POST',
+            'callback' => 'mn511_rest_add_favorite',
+            'permission_callback' => 'mn511_require_auth',
+        ),
+    ));
+
+    register_rest_route('mn511/v1', '/favorites/(?P<id>[a-zA-Z0-9_\\-:.]+)', array(
+        'methods' => 'DELETE',
+        'callback' => 'mn511_rest_remove_favorite',
+        'permission_callback' => 'mn511_require_auth',
+    ));
+}
+add_action('rest_api_init', 'mn511_register_rest_routes');

@@ -2,6 +2,10 @@
 
 A comprehensive REST API for Minnesota 511 traffic, weather, and road condition data. Fetches data from the official MN511 GraphQL API, caches it in SQLite, and exposes clean RESTful endpoints with GeoJSON responses.
 
+Documentation:
+- API guide: docs/API.md
+- API home: https://511.mp.ls and https://mp.ls
+
 ## Features
 
 - 🚗 Traffic incidents, crashes, and closures
@@ -26,12 +30,10 @@ A comprehensive REST API for Minnesota 511 traffic, weather, and road condition 
     ```
     MN511_GRAPHQL_URL=https://graphql.mn511.org/
     CORS_ORIGIN=http://localhost:8788,http://127.0.0.1:8788
-    NODE_TLS_REJECT_UNAUTHORIZED=0
     MN511_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36
     ```
     *   `MN511_GRAPHQL_URL`: The official GraphQL endpoint for the MN511 API.
     *   `CORS_ORIGIN`: The origin(s) to allow for Cross-Origin Resource Sharing. The default frontend server runs on port `8788`.
-    *   `NODE_TLS_REJECT_UNAUTHORIZED`: This is necessary to bypass the self-signed certificate error from the GraphQL endpoint in a development environment.
     *   `MN511_USER_AGENT`: Sets a common browser user agent to avoid being blocked by the upstream server.
 
 3.  **Start the development server:**
@@ -132,35 +134,9 @@ node extract-graphql.js
 ```
 Creates `extracted-graphql.json` from `511mn.org.har`.
 
-## WordPress Integration
-
-**Complete WordPress integration available** in the `wp/` directory:
-
-### Enhanced MPLS Hub Plugin
-- **Smart API synchronization** with unique identifier system
-- **Auto-updates** existing alerts instead of creating duplicates
-- **Auto-cleanup** of expired/resolved alerts
-- **Frontend display components** with professional styling
-- **Road-specific traffic views** for better organization
-- **Weather stations and message signs** integration
-
-### Quick Start
-1. See **[wp/DOCS/QUICKSTART.md](wp/DOCS/QUICKSTART.md)** for 5-minute setup
-2. See **[wp/DOCS/WORDPRESS_INTEGRATION.md](wp/DOCS/WORDPRESS_INTEGRATION.md)** for comprehensive guide
-3. See **[wp/DOCS/WORDPRESS_IMPLEMENTATION_SUMMARY.md](wp/DOCS/WORDPRESS_IMPLEMENTATION_SUMMARY.md)** for technical details
-
-### Features
-- ✅ No duplicate alerts (unique ID tracking)
-- ✅ Alert banner for homepage
-- ✅ Traffic organized by road (I-94, I-35W, etc.)
-- ✅ Weather stations with live RWIS data
-- ✅ Message signs with current messages
-- ✅ Hourly auto-sync
-- ✅ Professional styling
-
 ## Web Map + Widget
 
-The `web/` folder contains a Leaflet demo map and a JS widget.
+The `web/` folder contains a simple Leaflet demo map and a JS widget to explore API data in a browser.
 
 Run locally:
 ```bash
@@ -170,6 +146,30 @@ node web/serve.js
 Demo pages:
 - `http://localhost:8788/` (full map)
 - `http://localhost:8788/widget-demo.html`
+
+API docs:
+- `docs/API.md`
+
+## WordPress Favorites
+
+The map can authenticate against a WordPress site and store per-user favorites (alerts, cameras, and other pins).
+
+1. Install `mn511-importer.php` as a WordPress plugin (it now also exposes auth + favorites REST endpoints).
+2. Make sure your server forwards the `Authorization` header to WordPress (required for Bearer tokens).
+3. Configure the map with a WordPress base URL:
+   - `http://localhost:8788/?wpBase=https://your-wordpress-site`
+   - Or set `window.MN511_WP_BASE = "https://your-wordpress-site"` before loading `web/assets/app.js`.
+
+Endpoints added by the plugin:
+- `POST /wp-json/mn511/v1/login`
+- `POST /wp-json/mn511/v1/logout`
+- `GET /wp-json/mn511/v1/favorites`
+- `POST /wp-json/mn511/v1/favorites`
+- `DELETE /wp-json/mn511/v1/favorites/{id}`
+
+## Disclaimer
+
+This is an unofficial API and is not associated with or endorsed by the State of Minnesota or MnDOT. It uses public traveler information sources and is provided "as-is."
 
 ## Data Sources
 

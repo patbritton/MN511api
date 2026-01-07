@@ -1,4 +1,3 @@
-import { config } from "../config.js";
 import { fetch511Graphql } from "../services/fetch511.js";
 import { normalizeSigns } from "../services/normalizeNew.js";
 import { SIGNS_QUERY, buildListArgsVariables } from "../services/queries.js";
@@ -125,8 +124,7 @@ async function listSignsLive(app, req, reply) {
         primaryLinearReference: sign.primary_linear_reference,
         secondaryLinearReference: sign.secondary_linear_reference,
         views: sign.views,
-        gantrySigns: sign.gantry_signs,
-        ...(config.exposeRaw ? { raw: sign.raw } : {})
+        gantrySigns: sign.gantry_signs
       }
     };
   });
@@ -203,7 +201,7 @@ export async function signRoutes(app) {
           id, uri, title, city_reference, sign_display_type, sign_status, color, icon,
           route_designator, primary_linear_reference, secondary_linear_reference,
           lat, lon, bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat,
-          views, gantry_signs, raw_json,
+          views, gantry_signs,
           source, first_seen_at, last_seen_at, last_updated_at
         FROM signs
         WHERE id = ?`
@@ -216,14 +214,6 @@ export async function signRoutes(app) {
     }
 
     const feature = toGeoJsonFeature(row);
-    if (config.exposeRaw) {
-      try {
-        feature.properties.raw = row.raw_json ? JSON.parse(row.raw_json) : null;
-      } catch {
-        feature.properties.raw = null;
-      }
-    }
-
     return { ok: true, feature };
   });
 }

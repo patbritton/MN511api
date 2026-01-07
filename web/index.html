@@ -39,6 +39,13 @@
           <span class="status-dot"></span>
           <span id="last-update">Loading...</span>
         </div>
+        <div class="header-auth">
+          <button type="button" class="auth-btn" id="auth-login">Sign In</button>
+          <div class="auth-user hidden" id="auth-user">
+            <span class="auth-user-name" id="auth-user-name"></span>
+            <button type="button" class="auth-btn secondary" id="auth-logout">Log Out</button>
+          </div>
+        </div>
       </header>
 
       <!-- Right Sidebar Panel -->
@@ -55,6 +62,10 @@
             <button type="button" class="tab-btn" data-tab="list">
               <span class="tab-icon">📋</span>
               List
+            </button>
+            <button type="button" class="tab-btn" data-tab="favorites">
+              <span class="tab-icon">??</span>
+              Favorites
             </button>
             <button type="button" class="tab-btn" data-tab="legend">
               <span class="tab-icon">ℹ️</span>
@@ -114,6 +125,21 @@
               <button type="button" class="filter-chip" data-filter="recent">Recent</button>
             </div>
             <div id="list" class="panel-list"></div>
+          </div>
+
+          <!-- Favorites Tab -->
+          <div id="tab-favorites" class="tab-panel">
+            <div class="list-header">
+              <div class="panel-title">Favorites</div>
+              <div class="list-stats">
+                <span id="favorites-count">0</span> saved
+              </div>
+            </div>
+            <div id="favorites-auth" class="favorites-auth">
+              <div class="favorites-auth-title">Sign in to save and sync favorites.</div>
+              <button type="button" class="auth-btn" id="favorites-login">Sign In</button>
+            </div>
+            <div id="favorites-list" class="panel-list"></div>
           </div>
 
           <!-- Legend Tab -->

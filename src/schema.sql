@@ -26,6 +26,12 @@ CREATE TABLE IF NOT EXISTS events (
   source TEXT,
   raw_json TEXT,
 
+  source_id TEXT,
+  source_updated_at TEXT,
+  source_updated_timestamp INTEGER,
+  source_version INTEGER DEFAULT 1,
+  source_fingerprint TEXT,
+
   first_seen_at TEXT,
   last_seen_at TEXT,
   last_updated_at TEXT
