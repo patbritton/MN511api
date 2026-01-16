@@ -1,4 +1,4 @@
-import { fetchIceOutData } from "../services/fetchIceOut.js";
+import { fetchSurfaceIncidentsData } from "../services/fetchSurfaceIncidents.js";
 
 const featureSchema = {
   type: "object",
@@ -38,9 +38,9 @@ const featureCollectionSchema = {
   }
 };
 
-export async function iceOutRoutes(app) {
+export async function surfaceIncidentRoutes(app) {
   app.get(
-    "/api/iceout",
+    "/api/surface-incidents",
     {
       schema: {
         response: {
@@ -58,15 +58,15 @@ export async function iceOutRoutes(app) {
       }
     },
     async (_req, reply) => {
-    try {
-      const data = await fetchIceOutData();
-      reply.header("Cache-Control", "public, max-age=300");
-      return data;
-    } catch (err) {
-      app.log.error({ err }, "IceOut fetch failed");
-      reply.code(502);
-      return { ok: false, error: "UPSTREAM_ERROR" };
-    }
+      try {
+        const data = await fetchSurfaceIncidentsData();
+        reply.header("Cache-Control", "public, max-age=300");
+        return data;
+      } catch (err) {
+        app.log.error({ err }, "Surface incidents fetch failed");
+        reply.code(502);
+        return { ok: false, error: "UPSTREAM_ERROR" };
+      }
     }
   );
 }

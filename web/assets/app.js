@@ -33,7 +33,7 @@ const LAYER_CATEGORIES = {
       { id: "incidents", label: "Crashes & Incidents", icon: "🚨", color: "#dc3545", endpoint: "/api/incidents", enabled: true },
       { id: "closures", label: "Road Closures", icon: "🚧", color: "#fd7e14", endpoint: "/api/closures", enabled: true },
       { id: "construction", label: "Construction", icon: "👷", color: "#ffc107", endpoint: "/v1/events?category=CONSTRUCTION", enabled: false },
-      { id: "surface-incidents", label: "Surface Incidents", icon: "!", color: "#e8590c", endpoint: "/api/iceout", enabled: false },
+      { id: "surface-incidents", label: "Surface Incidents", icon: "!", color: "#e8590c", endpoint: "/api/surface-incidents", enabled: false },
       { id: "cameras", label: "Traffic Cameras", icon: "📹", color: "#0066cc", endpoint: "/api/cameras", enabled: false }
     ]
   },
