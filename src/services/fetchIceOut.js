@@ -12,7 +12,8 @@ function buildDateRangeParams(days) {
   const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   return {
     incident_time__gte: start.toISOString(),
-    incident_time__lte: now.toISOString()
+    incident_time__lte: now.toISOString(),
+    since: now.toISOString()
   };
 }
 
