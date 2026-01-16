@@ -590,6 +590,16 @@ body {
   text-align: center;
 }
 
+.favorites-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 12px 12px;
+}
+
+.favorites-actions.hidden {
+  display: none;
+}
+
 .favorites-auth.hidden {
   display: none;
 }
@@ -1311,41 +1321,32 @@ body {
 
 @media (max-width: 768px) {
   .map-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    max-width: none;
-    margin: 0;
-    padding: 10px 12px;
-    border-radius: 0 0 14px 14px;
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    gap: 10px;
-    flex-wrap: wrap;
+    display: none;
   }
 
   .map-panel {
-    top: auto;
-    bottom: 0;
+    top: 0;
+    bottom: auto;
     left: 0;
     right: 0;
     width: 100%;
-    max-height: 55vh;
-    border-radius: 18px 18px 0 0;
-    border-bottom: none;
+    height: 48vh;
+    max-height: 60vh;
+    border-radius: 0 0 18px 18px;
+    border-top: none;
     resize: none;
     overflow: hidden;
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: env(safe-area-inset-top);
   }
 
   .map-controls {
-    bottom: auto;
-    top: 88px;
-    right: 12px;
-    left: auto;
-    gap: 6px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    top: auto;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    flex-direction: row;
+    gap: 10px;
   }
 
   .resize-handle {
@@ -1381,38 +1382,32 @@ body {
   }
 
   .map-panel::before {
-    content: "";
-    width: 40px;
-    height: 4px;
-    border-radius: 999px;
-    background: var(--border-color);
-    margin: 8px auto 0;
+    display: none;
   }
 
   .sidebar-header {
-    padding-top: 6px;
+    position: sticky;
+    top: 0;
+    background: var(--bg-overlay);
+    z-index: 2;
   }
 
   .sidebar-content {
-    padding-bottom: 24px;
+    padding-bottom: 20px;
+  }
+
+  .leaflet-control-attribution {
+    display: none;
   }
 }
 
 @media (max-width: 640px) {
-  .map-header {
-    padding-top: calc(10px + env(safe-area-inset-top));
-  }
-
   .brand-title {
     font-size: 14px;
   }
 
   .brand-subtitle {
     font-size: 10px;
-  }
-
-  .map-controls {
-    top: 96px;
   }
 
   .map-control-btn {
@@ -1422,7 +1417,8 @@ body {
   }
 
   .map-panel {
-    max-height: 62vh;
+    height: 52vh;
+    max-height: 65vh;
   }
 }
 

@@ -389,6 +389,8 @@ function updateAuthUI() {
   const userNameEl = document.getElementById("auth-user-name");
   const favoritesAuth = document.getElementById("favorites-auth");
   const favoritesLogin = document.getElementById("favorites-login");
+  const favoritesActions = document.getElementById("favorites-actions");
+  const favoritesLogout = document.getElementById("favorites-logout");
   const favoritesTitle = favoritesAuth?.querySelector(".favorites-auth-title");
 
   if (!WP_API_BASE) {
@@ -404,6 +406,8 @@ function updateAuthUI() {
       favoritesTitle.textContent = "WordPress integration is not configured.";
     }
     if (favoritesAuth) favoritesAuth.classList.remove("hidden");
+    if (favoritesActions) favoritesActions.classList.add("hidden");
+    if (favoritesLogout) favoritesLogout.disabled = true;
     if (userEl) userEl.classList.add("hidden");
     return;
   }
@@ -416,6 +420,8 @@ function updateAuthUI() {
       userNameEl.textContent = name;
     }
     if (favoritesAuth) favoritesAuth.classList.add("hidden");
+    if (favoritesActions) favoritesActions.classList.remove("hidden");
+    if (favoritesLogout) favoritesLogout.disabled = false;
   } else {
     if (loginBtn) {
       loginBtn.classList.remove("hidden");
@@ -424,6 +430,7 @@ function updateAuthUI() {
     }
     if (userEl) userEl.classList.add("hidden");
     if (favoritesAuth) favoritesAuth.classList.remove("hidden");
+    if (favoritesActions) favoritesActions.classList.add("hidden");
     if (favoritesTitle) favoritesTitle.textContent = "Sign in to save and sync favorites.";
   }
 
@@ -1957,10 +1964,12 @@ async function init() {
   const loginBtn = document.getElementById("auth-login");
   const favoritesLogin = document.getElementById("favorites-login");
   const logoutBtn = document.getElementById("auth-logout");
+  const favoritesLogout = document.getElementById("favorites-logout");
 
   if (loginBtn) loginBtn.addEventListener("click", showAuthModal);
   if (favoritesLogin) favoritesLogin.addEventListener("click", showAuthModal);
   if (logoutBtn) logoutBtn.addEventListener("click", () => logout());
+  if (favoritesLogout) favoritesLogout.addEventListener("click", () => logout());
 
   await initAuth();
 
