@@ -11,6 +11,7 @@ import { healthRoutes } from "./routes/health.js";
 import { eventRoutes } from "./routes/events.js";
 import { weatherStationRoutes } from "./routes/weatherStations.js";
 import { signRoutes } from "./routes/signs.js";
+import { iceOutRoutes } from "./routes/iceout.js";
 import { runEventsIngest, runStaticIngest, runIngestOnce } from "./services/ingest.js";
 
 const app = Fastify({
@@ -65,6 +66,7 @@ await healthRoutes(app);
 await eventRoutes(app);
 await weatherStationRoutes(app);
 await signRoutes(app);
+await iceOutRoutes(app);
 
 // Run once on startup (optional)
 try {
@@ -109,6 +111,7 @@ app.get("/", async () => {
       "/api/weather-stations",
       "/api/signs",
       "/api/alerts",
+      "/api/iceout",
       "/api/rest-areas",
       "/api/weigh-stations",
       "/api/fueling-stations",

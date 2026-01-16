@@ -33,6 +33,7 @@ const LAYER_CATEGORIES = {
       { id: "incidents", label: "Crashes & Incidents", icon: "🚨", color: "#dc3545", endpoint: "/api/incidents", enabled: true },
       { id: "closures", label: "Road Closures", icon: "🚧", color: "#fd7e14", endpoint: "/api/closures", enabled: true },
       { id: "construction", label: "Construction", icon: "👷", color: "#ffc107", endpoint: "/v1/events?category=CONSTRUCTION", enabled: false },
+      { id: "surface-incidents", label: "Surface Incidents", icon: "!", color: "#e8590c", endpoint: "/api/iceout", enabled: false },
       { id: "cameras", label: "Traffic Cameras", icon: "📹", color: "#0066cc", endpoint: "/api/cameras", enabled: false }
     ]
   },
@@ -732,6 +733,26 @@ function buildTrafficPopup(feature) {
   `;
 }
 
+function buildSurfacePopup(feature) {
+  const p = feature.properties || {};
+  const reportedMs = normalizeTimestamp(
+    p.reported_at || p.incident_time || p.incidentTime || p.last_updated_at
+  );
+  const reportedText = reportedMs ? new Date(reportedMs).toLocaleString() : null;
+  const location = p.location_description || p.locationDescription || p.location || "";
+
+  return `
+    <div class="popup">
+      <div class="popup-header">
+        <span class="popup-icon">!</span>
+        <div class="popup-title">${p.title || "Surface incident"}</div>
+      </div>
+      ${location ? `<div class="popup-meta">Location: ${location}</div>` : ""}
+      ${p.category ? `<div class="popup-meta">${p.category}</div>` : ""}
+      ${reportedText ? `<div class="popup-time">Reported ${reportedText}</div>` : ""}
+    </div>
+  `;
+}
 function buildWeatherStationPopup(feature) {
   const p = feature.properties || {};
   const updatedMs = extractUpdatedMs(feature);
@@ -1010,6 +1031,7 @@ function getPopupContent(feature, layerId) {
   else if (layerId === "signs") content = buildSignPopup(feature);
   else if (layerId === "cameras") content = buildCameraPopup(feature);
   else if (["incidents", "closures", "construction"].includes(layerId)) content = buildTrafficPopup(feature);
+  else if (layerId === "surface-incidents") content = buildSurfacePopup(feature);
   else content = buildDefaultPopup(feature);
 
   return appendPopupActions(content, feature, layerId);
@@ -1157,6 +1179,25 @@ async function loadLayer(layerId, bbox) {
       return { features: [] };
     }
     const data = await res.json();
+    if (layerId === "surface-incidents" && data && Array.isArray(data.features)) {
+      data.features = data.features.map((feature) => {
+        const p = feature.properties || {};
+        const location = p.location_description || p.locationDescription || p.location || "";
+        const incidentTime = p.incident_time || p.incidentTime || null;
+        return {
+          ...feature,
+          properties: {
+            ...p,
+            title: p.title || "Surface incident",
+            tooltip: location || p.tooltip || "",
+            category: p.category || "Surface hazard",
+            location_description: location || p.location_description || "",
+            reported_at: p.reported_at || incidentTime || null,
+            last_updated_at: p.last_updated_at || incidentTime || null
+          }
+        };
+      });
+    }
     return data.features ? data : { features: [] };
   } catch (err) {
     if (err && err.name === "AbortError") {
